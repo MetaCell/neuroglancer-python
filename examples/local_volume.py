@@ -31,7 +31,7 @@ from nglancer_utils.viewer_utils import (
 from nglancer_utils.layer_utils import add_render_panel
 
 
-def add_image_layer(state):
+def add_image_layer(state, **kwargs):
     shape = (2500, 2500, 250)
     data = zarr.full(shape=shape, fill_value=255, chunks=[157, 157, 32], dtype="uint8")
     print(data.info)
@@ -46,20 +46,30 @@ def add_image_layer(state):
             "A": neuroglancer.VolumeRenderingTool(),
         },
         panels=[add_render_panel()],
+        **kwargs,
     )
 
+def get_shader():
+    return """
+#uicontrol float gain slider(min=0, max=10, default=1.0)
+#uicontrol invlerp normalized(range=[0,255], clamp=true)
+#uicontrol vec3 color color(default="white")
+void main() {
+    float val = normalized();
+    emitRGBA(vec4(color, val * gain));
+    }
+    """
 
 if __name__ == "__main__":
     viewer = launch_nglancer()
     with viewer.txn() as s:
-        add_image_layer(s)
+        add_image_layer(s, shader=get_shader())
     threedee_view(viewer)
     remove_axis_lines(viewer)
     show_statistics(viewer)
     update_title(viewer, "Volume control example")
     set_gpu_memory(viewer, gpu_memory=2)
     update_projection(viewer, orientation=[0.25, 0.6, 0.65, 0.3])
-    # TODO add a nice default shader
     open_browser(viewer, hang=False)
     sleep(4) # TODO this is a hack to wait for viewer to open
     update_projection(viewer, scale=4555, depth=4429)
