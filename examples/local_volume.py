@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
+from time import sleep
+
+import zarr
 
 import neuroglancer
 
@@ -30,10 +32,11 @@ from nglancer_utils.layer_utils import add_render_panel
 
 
 def add_image_layer(state):
-    shape = (128, 128, 128)
-    data = np.ones(shape)
+    shape = (2500, 2500, 250)
+    data = zarr.full(shape=shape, fill_value=255, chunks=[157, 157, 32], dtype="uint8")
+    print(data.info)
     dimensions = neuroglancer.CoordinateSpace(
-        names=["x", "y", "z"], units="cm", scales=[1, 1, 1]
+        names=["x", "y", "z"], units="nm", scales=[40, 40, 400]
     )
     local_volume = neuroglancer.LocalVolume(data, dimensions)
     state.layers["image"] = neuroglancer.ImageLayer(
@@ -55,8 +58,8 @@ if __name__ == "__main__":
     show_statistics(viewer)
     update_title(viewer, "Volume control example")
     set_gpu_memory(viewer, gpu_memory=2)
-    update_projection(viewer, orientation=[0.1, 0.5, 0.5, 0.5], scale=1.82)
-    update_projection(viewer, depth=110.0)
-    # TODO you control depth like this, but it won't change before viewer is open for some reason. You can change after though.
+    update_projection(viewer, orientation=[0.25, 0.6, 0.65, 0.3])
     # TODO add a nice default shader
     open_browser(viewer, hang=False)
+    sleep(4) # TODO this is a hack to wait for viewer to open
+    update_projection(viewer, scale=4555, depth=4429)
