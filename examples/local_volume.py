@@ -16,7 +16,17 @@ import numpy as np
 
 import neuroglancer
 
-from nglancer_utils.viewer_utils import launch_nglancer, open_browser
+from nglancer_utils.viewer_utils import (
+    launch_nglancer,
+    open_browser,
+    threedee_view,
+    update_projection,
+    remove_axis_lines,
+    show_statistics,
+    update_title,
+    set_gpu_memory,
+)
+from nglancer_utils.layer_utils import add_render_panel
 
 
 def add_image_layer(state):
@@ -32,6 +42,7 @@ def add_image_layer(state):
         tool_bindings={
             "A": neuroglancer.VolumeRenderingTool(),
         },
+        panels=[add_render_panel()],
     )
 
 
@@ -39,4 +50,13 @@ if __name__ == "__main__":
     viewer = launch_nglancer()
     with viewer.txn() as s:
         add_image_layer(s)
-    open_browser(viewer)
+    threedee_view(viewer)
+    remove_axis_lines(viewer)
+    show_statistics(viewer)
+    update_title(viewer, "Volume control example")
+    set_gpu_memory(viewer, gpu_memory=2)
+    update_projection(viewer, orientation=[0.1, 0.5, 0.5, 0.5], scale=1.82)
+    update_projection(viewer, depth=110.0)
+    # TODO you control depth like this, but it won't change before viewer is open for some reason. You can change after though.
+    # TODO add a nice default shader
+    open_browser(viewer, hang=False)
