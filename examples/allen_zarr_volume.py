@@ -1,13 +1,13 @@
 from time import sleep
 
 import neuroglancer
-from nglancer_utils.viewer_utils import (
+from neuroglancer_utils.viewer_utils import (
     launch_nglancer,
     open_browser,
     update_projection,
     generic_volume_setup,
 )
-from nglancer_utils.layer_utils import add_render_panel
+from neuroglancer_utils.layer_utils import add_render_panel
 
 URL = r"zarr://s3://aind-open-data/exaSPIM_609281_2022-11-03_13-49-18_stitched_2022-11-22_12-07-00/fused.zarr/fused.zarr/"
 

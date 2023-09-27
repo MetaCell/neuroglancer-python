@@ -1,8 +1,10 @@
 [project]
-name = "nglancer_utils"
+name = "neuroglancer_utils"
 version = "0.0.1"
 dependencies = [
-    "neuroglancer"
+    "neuroglancer",
+    "zarr",
+    "numba",
 ]
 
 [build-system]

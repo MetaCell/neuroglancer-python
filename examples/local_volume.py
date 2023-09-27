@@ -18,7 +18,7 @@ import zarr
 
 import neuroglancer
 
-from nglancer_utils.viewer_utils import (
+from neuroglancer_utils.viewer_utils import (
     launch_nglancer,
     open_browser,
     threedee_view,
@@ -28,7 +28,7 @@ from nglancer_utils.viewer_utils import (
     update_title,
     set_gpu_memory,
 )
-from nglancer_utils.layer_utils import add_render_panel
+from neuroglancer_utils.layer_utils import add_render_panel
 
 
 def add_image_layer(state, **kwargs):

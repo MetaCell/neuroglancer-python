@@ -1,10 +1,10 @@
 import neuroglancer
-from nglancer_utils.viewer_utils import (
+from neuroglancer_utils.viewer_utils import (
     launch_nglancer,
     generic_volume_setup,
     open_browser,
 )
-from nglancer_utils.layer_utils import add_render_panel
+from neuroglancer_utils.layer_utils import add_render_panel
 
 if __name__ == "__main__":
     viewer = launch_nglancer()
