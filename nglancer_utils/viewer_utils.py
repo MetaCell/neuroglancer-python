@@ -22,6 +22,13 @@ def open_browser(viewer, hang=True):
         input("Press Enter to continue...")
 
 
+def generic_volume_setup(viewer):
+    threedee_view(viewer)
+    remove_axis_lines(viewer)
+    show_statistics(viewer)
+    set_gpu_memory(viewer, gpu_memory=2)
+    update_title(viewer, "Volume example")
+
 def threedee_view(viewer):
     with viewer.txn() as state:
         state.layout = "3d"
