@@ -1,25 +1,21 @@
-import argparse
-import webbrowser
-
 import neuroglancer
-import neuroglancer.cli
+from nglancer_utils.viewer_utils import (
+    launch_nglancer,
+    generic_volume_setup,
+    open_browser,
+)
+from nglancer_utils.layer_utils import add_render_panel
 
-if __name__ == '__main__':
-    ap = argparse.ArgumentParser()
-    neuroglancer.cli.add_server_arguments(ap)
-    args = ap.parse_args()
-    neuroglancer.cli.handle_server_arguments(args)
-
-    viewer = neuroglancer.Viewer()
+if __name__ == "__main__":
+    viewer = launch_nglancer()
     with viewer.txn() as s:
-        s.layers['image'] = neuroglancer.ImageLayer(
-            source='precomputed://gs://neuroglancer-public-data/flyem_fib-25/image',
+        s.layers["image"] = neuroglancer.ImageLayer(
+            source="precomputed://gs://neuroglancer-public-data/flyem_fib-25/image",
             tool_bindings={
-                'A': neuroglancer.ShaderControlTool(control='normalized'),
-                'B': neuroglancer.OpacityTool(),
+                "A": neuroglancer.VolumeRenderingTool(),
+                "B": neuroglancer.VolumeRenderingSamplesPerRayTool(),
             },
+            panels=[add_render_panel()],
         )
-
-    print(viewer)
-    webbrowser.open_new(viewer.get_viewer_url())
-    input("Press Enter to continue...")
+    generic_volume_setup(viewer)
+    open_browser(viewer)
