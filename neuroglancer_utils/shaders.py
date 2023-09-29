@@ -25,3 +25,22 @@ void main() {
   }
 }
 """
+
+# NOTE: not a real isosurface, just to see what this kind of GPU-based isosurface
+# would look like in neuroglancer with the different chunks etc.
+iso_surface_shader = """
+#uicontrol float gain slider(min=-10, max=1000)
+#uicontrol invlerp normalized(range=[100, 1000], window=[0, 65535], clamp=true)
+#uicontrol vec3 color color(default="white")
+#uicontrol float inttargetmin slider(min=0, max=65535)
+#uicontrol float inttargetmax slider(min=0, max=65535)
+void main() {
+  float targetmin = inttargetmin / 65535.0;
+  float targetmax = inttargetmax / 65535.0;
+  float val = normalized();
+  if (val >= targetmin && val <= targetmax) {
+    outputColor = (vec4(color * gain, 1.0));
+    //TODO would break; in real example
+  }
+}
+"""
