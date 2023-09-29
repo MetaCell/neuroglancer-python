@@ -8,28 +8,15 @@ from neuroglancer_utils.viewer_utils import (
     generic_volume_setup,
 )
 from neuroglancer_utils.layer_utils import add_render_panel
+from neuroglancer_utils.shaders import volume_rendering_shader
 
 URL = r"zarr://s3://aind-open-data/exaSPIM_609281_2022-11-03_13-49-18_stitched_2022-11-22_12-07-00/fused.zarr/fused.zarr/"
-
-shader = """
-#uicontrol float gain slider(min=0, max=1000, default=100)
-#uicontrol invlerp normalized(range=[100, 500], window=[0, 15000], clamp=true)
-#uicontrol vec3 color color(default="white")
-void main() {
-  float val = normalized();
-  if (VOLUME_RENDERING) {
-    emitRGBA(vec4(color, val*gain));
-  } else {
-    emitRGB(vec3(val, val, val));
-  }
-}
-"""
 
 
 def add_image_layer(state):
     state.layers["brain"] = neuroglancer.ImageLayer(
         source=URL,
-        shader=shader,
+        shader=volume_rendering_shader,
         volume_rendering=True,
         panels=[add_render_panel()],
     )
