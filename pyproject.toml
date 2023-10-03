@@ -5,6 +5,8 @@ dependencies = [
     "neuroglancer",
     "zarr",
     "numba",
+    "scikit-image",
+    "pooch",
 ]
 
 [build-system]
