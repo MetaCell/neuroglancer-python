@@ -19,7 +19,7 @@ volume_rendering_shader = """
 void main() {
   float val = normalized();
   if (VOLUME_RENDERING) {
-    emitRGBA(vec4(color, val * gain));
+    emitRGBA(vec4(color, clamp(val * gain, 0.0, 1.0)));
   } else {
     emitRGB(vec3(val, val, val));
   }
