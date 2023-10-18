@@ -10,6 +10,7 @@ import neuroglancer.cli
 
 
 def load_data(metadata_path, annotations_path):
+    """Load in the metadata (json) and annotations (ndjson) files."""
     with open(metadata_path) as f:
         metadata = json.load(f)
     with open(annotations_path) as f:
@@ -18,6 +19,11 @@ def load_data(metadata_path, annotations_path):
 
 
 def write_annotations(output_dir, annotations, coordinate_space, colors):
+    """
+    Create a neuroglancer annotation folder with the given annotations.
+    
+    See https://github.com/google/neuroglancer/blob/master/src/neuroglancer/datasource/precomputed/annotations.md
+    """
     names = [a["metadata"]["annotation_object"]["name"] for a in annotations]
     writer = neuroglancer.write_annotations.AnnotationWriter(
         coordinate_space=coordinate_space,
@@ -37,6 +43,7 @@ def write_annotations(output_dir, annotations, coordinate_space, colors):
     for i, a in enumerate(annotations):
         data = a["data"]
         size = a["metadata"]["annotation_object"]["diameter"]
+        # TODO not sure what units the diameter is in
         size = size / 1000
         name = i
         color = colors[i]
@@ -54,6 +61,7 @@ def view_data(coordinate_space, output_dir):
     neuroglancer.cli.handle_server_arguments(args)
     viewer = neuroglancer.Viewer()
 
+    # Start a static file server, serve the contents of the output directory.
     server = neuroglancer.static_file_server.StaticFileServer(
         static_dir=output_dir,
         bind_address=args.bind_address or "127.0.0.1",
@@ -80,7 +88,8 @@ void main() {
     print(viewer)
 
 
-def main(paths, output_dir):
+def main(paths, output_dir, should_view):
+    """For each path set, load the data and write the combined annotations."""
     annotations = []
     for path_set in paths:
         input_metadata_path, input_annotations_path = path_set
@@ -94,7 +103,8 @@ def main(paths, output_dir):
     write_annotations(output_dir, annotations, coordinate_space, colors)
     print("Wrote annotations to", output_dir)
 
-    view_data(coordinate_space, output_dir)
+    if should_view:
+        view_data(coordinate_space, output_dir)
 
 if __name__ == "__main__":
     base_dir = Path("/media/starfish/LargeSSD/data/cryoET/data")
@@ -104,4 +114,5 @@ if __name__ == "__main__":
     input_metadata_path = base_dir / "sara_goetz-fatty_acid_synthase-1.0.json"
     input_annotations_path = base_dir / "sara_goetz-fatty_acid_synthase-1.0.ndjson"
     paths.append((input_metadata_path, input_annotations_path))
-    main(paths, base_dir / "annotations")
+    should_view = False
+    main(paths, base_dir / "annotations", should_view)
