@@ -12,6 +12,7 @@ import numpy as np
 import dask.array as da
 
 
+#TODO the output segmentation volume is massively larger than the input
 @dataclass
 class Chunk:
     buffer: bytearray
@@ -58,6 +59,7 @@ def _create_metadata(
                 "chunk_sizes": [list(chunk_size)],
                 "encoding": "compressed_segmentation",
                 "compressed_segmentation_block_size": list(block_size),
+                # TODO resolution is in nm, while for others there is no units
                 "resolution": [1, 1, 1],
                 "key": "data",
                 "size": list(data_size),
@@ -222,6 +224,7 @@ def _create_segmentation_chunk(
             z * bz : (z + 1) * bz, y * by : (y + 1) * by, x * bx : (x + 1) * bx
         ]
         unique_values, indices = da.unique(block, return_inverse=True)
+        # TODO mismatch between dimensions and data size after padding
         block = _pad_block(block, block_size)
 
         lookup_table_offset, encoded_bits = _create_lookup_table(
