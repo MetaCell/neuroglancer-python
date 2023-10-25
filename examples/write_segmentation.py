@@ -15,13 +15,22 @@ import dask.array as da
 @dataclass
 class Chunk:
     buffer: bytearray
-    dimensions: list[int]
+    dimensions: tuple[tuple[int, int, int], tuple[int, int, int]]
 
     def get_name(self):
+        """Return the name of the chunk"""
         z_begin, z_end = self.dimensions[0][0], self.dimensions[1][0]
         y_begin, y_end = self.dimensions[0][1], self.dimensions[1][1]
         x_begin, x_end = self.dimensions[0][2], self.dimensions[1][2]
         return f"{x_begin}-{x_end}_{y_begin}-{y_end}_{z_begin}-{z_end}"
+
+    def write_to_directory(self, directory: Path):
+        """Write the chunk to the given directory"""
+        directory.mkdir(parents=True, exist_ok=True)
+        output_filename = self.get_name()
+        output_filepath = directory / output_filename
+        with open(output_filepath, "wb") as f:
+            f.write(self.buffer)
 
 
 def load_data(input_filepath: Path) -> da.Array:
@@ -39,6 +48,7 @@ def _create_metadata(
     block_size: tuple[int, int, int],
     data_size: tuple[int, int, int],
 ):
+    """Create the metadata for the segmentation"""
     metadata = {
         "@type": "neuroglancer_multiscale_volume",
         "data_type": "uint32",
@@ -65,16 +75,12 @@ def write_segmentation(
     output_directory.mkdir(parents=True, exist_ok=True)
     metadata_path = output_directory / "info"
     output_chunk_directory = output_directory / "data"
-    output_chunk_directory.mkdir(parents=True, exist_ok=True)
 
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=4)
 
     for chunk in input_data:
-        output_filename = chunk.get_name()
-        output_filepath = output_chunk_directory / output_filename
-        with open(output_filepath, "wb") as f:
-            f.write(input_data)
+        chunk.write_to_directory(output_chunk_directory)
 
 
 def _get_grid_size_from_block_size(
@@ -205,12 +211,13 @@ def _create_segmentation_chunk(
     dimensions: tuple[tuple[int, int, int], tuple[int, int, int]],
     block_size: tuple[int, int, int] = (8, 8, 8),
 ):
+    """Convert data in a dask array to a neuroglancer segmentation chunk"""
     buffer = bytearray()
     bz, by, bx = block_size
     gz, gy, gx = _get_grid_size_from_block_size(dask_data.shape, block_size)
     stored_lookup_tables = {}
 
-    for z, y, x in tqdm(np.ndindex(gx, gy, gz), total=gx * gy * gz):
+    for z, y, x in np.ndindex(gx, gy, gz):
         block = dask_data[
             z * bz : (z + 1) * bz, y * by : (y + 1) * by, x * bx : (x + 1) * bx
         ]
@@ -254,15 +261,23 @@ def _iterate_chunks(dask_data: da.Array):
 
 
 def create_segmentation(dask_data: da.Array, block_size):
-    for chunk, dimensions in _iterate_chunks(dask_data):
+    """Yield the neuroglancer segmentation format chunks"""
+    to_iterate = _iterate_chunks(dask_data)
+    num_iters = np.prod(dask_data.numblocks)
+    for chunk, dimensions in tqdm(
+        to_iterate, desc="Processing chunks", total=num_iters
+    ):
         yield _create_segmentation_chunk(chunk, dimensions, block_size)
 
 
 def main(filename, block_size=(64, 64, 64)):
+    """Convert the given OME-Zarr file to neuroglancer segmentation format with the given block size"""
     dask_data = load_data(filename)
     metadata = _create_metadata(dask_data.chunksize, block_size, dask_data.shape)
     chunks = [c for c in create_segmentation(dask_data, block_size)]
-    write_segmentation(chunks, metadata, filename.parent / "segmentation")
+    output_directory = filename.parent / f"precomputed-{filename.stem}"
+    write_segmentation(chunks, metadata, output_directory)
+    print(f"Wrote segmentation to {output_directory}")
 
 
 if __name__ == "__main__":
