@@ -11,17 +11,18 @@ from dataclasses import dataclass
 import numpy as np
 import dask.array as da
 
+
 @dataclass
 class Chunk:
     buffer: bytearray
     dimensions: list[int]
-    
+
     def get_name(self):
-        x_begin, x_end = self.dimensions[0], self.dimensions[1]
-        y_begin, y_end = self.dimensions[2], self.dimensions[3]
-        z_begin, z_end = self.dimensions[4], self.dimensions[5]
+        z_begin, z_end = self.dimensions[0][0], self.dimensions[1][0]
+        y_begin, y_end = self.dimensions[0][1], self.dimensions[1][1]
+        x_begin, x_end = self.dimensions[0][2], self.dimensions[1][2]
         return f"{x_begin}-{x_end}_{y_begin}-{y_end}_{z_begin}-{z_end}"
-        
+
 
 def load_data(input_filepath: Path) -> da.Array:
     """Load the OME-Zarr data and return a dask array"""
@@ -48,7 +49,7 @@ def _create_metadata(
                 "encoding": "compressed_segmentation",
                 "compressed_segmentation_block_size": list(block_size),
                 "resolution": [1, 1, 1],
-                "key": "segmentation",
+                "key": "data",
                 "size": list(data_size),
             }
         ],
@@ -63,7 +64,8 @@ def write_segmentation(
     """Write the segmentation to the given directory"""
     output_directory.mkdir(parents=True, exist_ok=True)
     metadata_path = output_directory / "info"
-    output_chunk_directory = output_directory / "segmentation"
+    output_chunk_directory = output_directory / "data"
+    output_chunk_directory.mkdir(parents=True, exist_ok=True)
 
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=4)
@@ -79,9 +81,9 @@ def _get_grid_size_from_block_size(
     data_shape: tuple[int, int, int], block_size: tuple[int, int, int]
 ) -> tuple[int, int, int]:
     """Calculate the grid size from the block size"""
-    gx = ceil(data_shape[0] / block_size[0])
+    gz = ceil(data_shape[0] / block_size[0])
     gy = ceil(data_shape[1] / block_size[1])
-    gz = ceil(data_shape[2] / block_size[2])
+    gx = ceil(data_shape[2] / block_size[2])
     return gx, gy, gz
 
 
@@ -198,17 +200,19 @@ def _create_encoded_values(buffer: bytearray, positions: da.Array) -> int:
     return encoded_values_offset
 
 
-def _create_segmentation_chunk(dask_data, block_size=(8, 8, 8)):
-    print(dask_data.shape)
-    return 1
+def _create_segmentation_chunk(
+    dask_data: da.Array,
+    dimensions: tuple[tuple[int, int, int], tuple[int, int, int]],
+    block_size: tuple[int, int, int] = (8, 8, 8),
+):
     buffer = bytearray()
-    bx, by, bz = block_size
-    gx, gy, gz = _get_grid_size_from_block_size(dask_data.shape, block_size)
+    bz, by, bx = block_size
+    gz, gy, gx = _get_grid_size_from_block_size(dask_data.shape, block_size)
     stored_lookup_tables = {}
 
-    for x, y, z in tqdm(np.ndindex(gx, gy, gz), total=gx * gy * gz):
+    for z, y, x in tqdm(np.ndindex(gx, gy, gz), total=gx * gy * gz):
         block = dask_data[
-            x * bx : (x + 1) * bx, y * by : (y + 1) * by, z * bz : (z + 1) * bz
+            z * bz : (z + 1) * bz, y * by : (y + 1) * by, x * bx : (x + 1) * bx
         ]
         unique_values, indices = da.unique(block, return_inverse=True)
         block = _pad_block(block, block_size)
@@ -226,17 +230,37 @@ def _create_segmentation_chunk(dask_data, block_size=(8, 8, 8)):
             block_offset,
         )
 
-    # start_x, end_x = 
-    return Chunk(buffer, [])
+    return Chunk(buffer, dimensions)
+
+
+def _iterate_chunks(dask_data: da.Array):
+    """Iterate over the chunks in the dask array"""
+    chunk_layout = dask_data.chunks
+
+    for zi, z in enumerate(chunk_layout[0]):
+        for yi, y in enumerate(chunk_layout[1]):
+            for xi, x in enumerate(chunk_layout[2]):
+                chunk = dask_data.blocks[zi, yi, xi]
+
+                # Calculate the chunk dimensions
+                start = (
+                    sum(chunk_layout[0][:zi]),
+                    sum(chunk_layout[1][:yi]),
+                    sum(chunk_layout[2][:xi]),
+                )
+                end = (start[0] + z, start[1] + y, start[2] + x)
+                dimensions = (start, end)
+                yield chunk, dimensions
+
 
 def create_segmentation(dask_data: da.Array, block_size):
-    for block in dask_data.blocks:
-        yield _create_segmentation_chunk(block, block_size)
+    for chunk, dimensions in _iterate_chunks(dask_data):
+        yield _create_segmentation_chunk(chunk, dimensions, block_size)
 
-def main(filename, block_size=(128, 128, 128)):
+
+def main(filename, block_size=(64, 64, 64)):
     dask_data = load_data(filename)
     metadata = _create_metadata(dask_data.chunksize, block_size, dask_data.shape)
-    print(dask_data.chunks)
     chunks = [c for c in create_segmentation(dask_data, block_size)]
     write_segmentation(chunks, metadata, filename.parent / "segmentation")
 
