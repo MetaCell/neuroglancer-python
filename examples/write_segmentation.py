@@ -11,8 +11,10 @@ from dataclasses import dataclass
 import numpy as np
 import dask.array as da
 
+DEBUG = False
 
-#TODO the output segmentation volume is massively larger than the input
+
+# TODO the output segmentation volume is massively larger than the input
 @dataclass
 class Chunk:
     buffer: bytearray
@@ -114,6 +116,83 @@ def _pad_block(block: da.Array, block_size: tuple[int, int, int]) -> da.Array:
     )
 
 
+def _get_encoded_bits(unique_values: np.ndarray) -> int:
+    """Return the number of bits needed to encode the given values"""
+    if np.all(unique_values == 0) or len(unique_values) == 0:
+        return 0
+    bits = 1
+    while 2**bits < len(unique_values):
+        bits += 1
+    if bits > 32:
+        raise ValueError("Too many unique values in block")
+    return bits
+
+
+def _pack_encoded_values(encoded_values: np.ndarray, encoded_bits: int) -> bytes:
+    """
+    Pack the encoded values into 32bit unsigned integers
+
+    To view the packed values as a numpy array, use the following:
+    np.frombuffer(packed_values, dtype=np.uint32).view(f"u{encoded_bits}")
+
+    Parameters
+    ----------
+    encoded_values : np.ndarray
+        The encoded values
+    encoded_bits : int
+        The number of bits used to encode the values
+
+    Returns
+    -------
+    packed_values : bytes
+        The packed values
+    """
+    if encoded_bits == 0:
+        return bytes()
+    values_per_uint32 = 32 // encoded_bits
+    number_of_values = ceil(len(encoded_values) / values_per_uint32)
+    padded_values = np.pad(
+        encoded_values,
+        (0, number_of_values * values_per_uint32 - len(encoded_values)),
+    )
+    if encoded_bits == 1:
+        reshaped = padded_values.reshape((-1, 32)).astype(np.uint8)
+        packed_values = np.packbits(reshaped, bitorder="little").tobytes()
+
+        if DEBUG:
+            values, binary = get_back_values_from_buffer(packed_values)
+            assert np.all(binary == padded_values)
+        return packed_values
+    else:
+        raise NotImplementedError("Only 1 bit encoding is implemented")
+    # TODO implement other bit sizes
+    # packed_values = 1
+    # return packed_values.tobytes()
+
+
+def get_back_values_from_buffer(bytes_: bytes):
+    """
+    Return the values from the given buffer
+
+    This is for the encoded values in the neuroglancer segmentation format, so are in uint32.
+
+    Parameters
+    ----------
+    bytes_ : bytes
+        The buffer to get the values from
+
+    Returns
+    -------
+    values : np.ndarray
+        The values
+    binary_representation : np.ndarray
+        The binary representation of the values
+    """
+    values = np.frombuffer(bytes_, dtype=np.uint32).view(np.uint32)
+    binary_representation = np.unpackbits(values.view(np.uint8), bitorder="little")
+    return values, binary_representation
+
+
 def _create_block_header(
     buffer: bytearray,
     lookup_table_offset: int,
@@ -175,28 +254,29 @@ def _create_lookup_table(
         The number of bits used to encode the values
     """
     unique_values = unique_values.astype(np.uint32).compute()
-    encoded_bits = int(np.ceil(np.log2(unique_values.shape[0])))
-    if encoded_bits > 32:
-        raise ValueError("Too many unique values in block")
     values_in_bytes = unique_values.tobytes()
     if values_in_bytes not in stored_lookup_tables:
         lookup_table_offset = _get_buffer_position(buffer)
         stored_lookup_tables[values_in_bytes] = lookup_table_offset
-        buffer.extend(values_in_bytes)
+        buffer += values_in_bytes
     else:
         lookup_table_offset = stored_lookup_tables[values_in_bytes]
-    return lookup_table_offset, encoded_bits
+    return lookup_table_offset, _get_encoded_bits(unique_values)
 
 
-def _create_encoded_values(buffer: bytearray, positions: da.Array) -> int:
+def _create_encoded_values(
+    buffer: bytearray, positions: da.Array, encoded_bits: int
+) -> int:
     """Create the encoded values for the given values
 
     Parameters
     ----------
     buffer: bytearray
         The buffer to write the encoded values to
-    values: da.Array
-        The values to encode
+    positions: da.Array
+        The values to encode (positions in the lookup table)
+    encoded_bits: int
+        The number of bits used to encode the values
 
     Returns
     -------
@@ -204,7 +284,7 @@ def _create_encoded_values(buffer: bytearray, positions: da.Array) -> int:
         The offset in the buffer to the encoded values
     """
     encoded_values_offset = _get_buffer_position(buffer)
-    buffer.extend(positions.astype(np.uint32).compute().tobytes())
+    buffer += _pack_encoded_values(positions.compute(), encoded_bits)
     return encoded_values_offset
 
 
@@ -214,12 +294,13 @@ def _create_segmentation_chunk(
     block_size: tuple[int, int, int] = (8, 8, 8),
 ):
     """Convert data in a dask array to a neuroglancer segmentation chunk"""
-    buffer = bytearray()
     bz, by, bx = block_size
     gz, gy, gx = _get_grid_size_from_block_size(dask_data.shape, block_size)
-    stored_lookup_tables = {}
+    stored_lookup_tables: dict[bytes, int] = {}
+    # big enough to hold the 64-bit starting block headers
+    buffer = bytearray(gx * gy * gz * 8)
 
-    for z, y, x in np.ndindex(gx, gy, gz):
+    for x, y, z in np.ndindex(gx, gy, gz):
         block = dask_data[
             z * bz : (z + 1) * bz, y * by : (y + 1) * by, x * bx : (x + 1) * bx
         ]
@@ -230,7 +311,7 @@ def _create_segmentation_chunk(
         lookup_table_offset, encoded_bits = _create_lookup_table(
             buffer, stored_lookup_tables, unique_values
         )
-        encoded_values_offset = _create_encoded_values(buffer, indices)
+        encoded_values_offset = _create_encoded_values(buffer, indices, encoded_bits)
         block_offset = 8 * (x + gx * (y + gy * z))
         _create_block_header(
             buffer,
@@ -275,6 +356,7 @@ def create_segmentation(dask_data: da.Array, block_size):
 
 def main(filename, block_size=(64, 64, 64)):
     """Convert the given OME-Zarr file to neuroglancer segmentation format with the given block size"""
+    print(f"Converting {filename} to neuroglancer compressed segmentation format")
     dask_data = load_data(filename)
     metadata = _create_metadata(dask_data.chunksize, block_size, dask_data.shape)
     chunks = [c for c in create_segmentation(dask_data, block_size)]
@@ -284,8 +366,9 @@ def main(filename, block_size=(64, 64, 64)):
 
 
 if __name__ == "__main__":
-    base_directory = Path("/media/starfish/LargeSSD/data/cryoET/data/segmentation")
+    base_directory = Path("/media/starfish/LargeSSD/data/cryoET/data")
     actin_filename = base_directory / "00004_actin_ground_truth_zarr"
     microtubules_filename = base_directory / "00004_MT_ground_truth_zarr"
-    main(actin_filename)
-    main(microtubules_filename)
+    block_size = (32, 32, 32)
+    main(actin_filename, block_size)
+    main(microtubules_filename, block_size)
