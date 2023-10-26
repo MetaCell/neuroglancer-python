@@ -1,7 +1,5 @@
-from pathlib import Path
 from math import ceil
 import struct
-from dataclasses import dataclass
 
 import numpy as np
 import dask.array as da
@@ -10,29 +8,9 @@ from neuroglancer_data_conversion.utils import (
     pad_block,
     get_grid_size_from_block_size,
 )
+from neuroglancer_data_conversion.chunk import Chunk
 
 DEBUG = False
-
-
-@dataclass
-class Chunk:
-    buffer: bytearray
-    dimensions: tuple[tuple[int, int, int], tuple[int, int, int]]
-
-    def get_name(self):
-        """Return the name of the chunk"""
-        z_begin, z_end = self.dimensions[0][0], self.dimensions[1][0]
-        y_begin, y_end = self.dimensions[0][1], self.dimensions[1][1]
-        x_begin, x_end = self.dimensions[0][2], self.dimensions[1][2]
-        return f"{x_begin}-{x_end}_{y_begin}-{y_end}_{z_begin}-{z_end}"
-
-    def write_to_directory(self, directory: Path):
-        """Write the chunk to the given directory"""
-        directory.mkdir(parents=True, exist_ok=True)
-        output_filename = self.get_name()
-        output_filepath = directory / output_filename
-        with open(output_filepath, "wb") as f:
-            f.write(self.buffer)
 
 
 def _get_buffer_position(buffer: bytearray) -> int:
@@ -232,7 +210,7 @@ def create_segmentation_chunk(
     # big enough to hold the 64-bit starting block headers
     buffer = bytearray(gx * gy * gz * 8)
 
-    for x, y, z in np.ndindex(gx, gy, gz):
+    for z, y, x in np.ndindex(gz, gy, gx):
         block = dask_data[
             z * bz : (z + 1) * bz, y * by : (y + 1) * by, x * bx : (x + 1) * bx
         ]

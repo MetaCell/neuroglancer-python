@@ -1,5 +1,10 @@
+from typing import Any
+from ome_zarr.io import parse_url
+from ome_zarr.reader import Reader
 from pathlib import Path
 from tqdm import tqdm
+import json
+
 import numpy as np
 import dask.array as da
 
@@ -7,14 +12,22 @@ from neuroglancer_data_conversion.utils import iterate_chunks
 from data_conversion.neuroglancer_data_conversion.segmentation_encoding import (
     create_segmentation_chunk,
 )
-from neuroglancer_data_conversion.io import load_omezarr_data, write_metadata
+
+
+def load_data(input_filepath: Path) -> da.Array:
+    """Load the OME-Zarr data and return a dask array"""
+    url = parse_url(input_filepath)
+    reader = Reader(url)
+    nodes = list(reader())
+    image_node = nodes[0]
+    dask_data = image_node.data[0]
+    return dask_data.persist()
 
 
 def _create_metadata(
     chunk_size: tuple[int, int, int],
     block_size: tuple[int, int, int],
     data_size: tuple[int, int, int],
-    data_directory: str,
 ):
     """Create the metadata for the segmentation"""
     metadata = {
@@ -28,13 +41,21 @@ def _create_metadata(
                 "compressed_segmentation_block_size": list(block_size),
                 # TODO resolution is in nm, while for others there is no units
                 "resolution": [1, 1, 1],
-                "key": data_directory,
+                "key": "data",
                 "size": list(data_size),
             }
         ],
         "type": "segmentation",
     }
     return metadata
+
+
+def write_metadata(metadata: dict[str, Any], output_directory: Path):
+    """Write the segmentation to the given directory"""
+    metadata_path = output_directory / "info"
+
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=4)
 
 
 def create_segmentation(dask_data: da.Array, block_size):
@@ -47,24 +68,21 @@ def create_segmentation(dask_data: da.Array, block_size):
         yield create_segmentation_chunk(chunk, dimensions, block_size)
 
 
-def main(filename, block_size=(64, 64, 64), data_directory="data"):
+def main(filename, block_size=(64, 64, 64)):
     """Convert the given OME-Zarr file to neuroglancer segmentation format with the given block size"""
     print(f"Converting {filename} to neuroglancer compressed segmentation format")
-    dask_data = load_omezarr_data(filename)
-    output_directory = filename.parent / f"precomputed-{filename.stem[:-5]}"
+    dask_data = load_data(filename)
+    output_directory = filename.parent / f"precomputed-{filename.stem}"
     output_directory.mkdir(parents=True, exist_ok=True)
     for c in create_segmentation(dask_data, block_size):
-        c.write_to_directory(output_directory / data_directory)
+        c.write_to_directory(output_directory / "data")
 
-    metadata = _create_metadata(
-        dask_data.chunksize, block_size, dask_data.shape, data_directory
-    )
+    metadata = _create_metadata(dask_data.chunksize, block_size, dask_data.shape)
     write_metadata(metadata, output_directory)
     print(f"Wrote segmentation to {output_directory}")
 
 
 if __name__ == "__main__":
-    # TODO create command line interface
     base_directory = Path("/media/starfish/LargeSSD/data/cryoET/data")
     actin_filename = base_directory / "00004_actin_ground_truth_zarr"
     microtubules_filename = base_directory / "00004_MT_ground_truth_zarr"

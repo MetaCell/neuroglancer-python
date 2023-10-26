@@ -38,8 +38,24 @@ def iterate_chunks(dask_data: da.Array):
 def get_grid_size_from_block_size(
     data_shape: tuple[int, int, int], block_size: tuple[int, int, int]
 ) -> tuple[int, int, int]:
-    """Calculate the grid size from the block size"""
+    """
+    Calculate the grid size from the block size
+
+    Both the data shape and block size should be in z, y, x order
+    
+    Parameters
+    ----------
+    data_shape : tuple[int, int, int]
+        The shape of the data
+    block_size : tuple[int, int, int]
+        The block size
+    
+    Returns
+    -------
+    tuple[int, int, int]
+        The grid size as gz, gy, gx
+    """
     gz = ceil(data_shape[0] / block_size[0])
     gy = ceil(data_shape[1] / block_size[1])
     gx = ceil(data_shape[2] / block_size[2])
-    return gx, gy, gz
+    return gz, gy, gx
