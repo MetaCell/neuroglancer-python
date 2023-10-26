@@ -14,7 +14,6 @@ import dask.array as da
 DEBUG = False
 
 
-# TODO the output segmentation volume is massively larger than the input
 @dataclass
 class Chunk:
     buffer: bytearray
@@ -226,7 +225,7 @@ def _create_block_header(
 
 
 def _create_lookup_table(
-    buffer: bytearray, stored_lookup_tables: dict[bytes, int], unique_values: da.Array
+    buffer: bytearray, stored_lookup_tables: dict[bytes, tuple[int, int]], unique_values: da.Array
 ) -> tuple[int, int]:
     """
     Create a lookup table for the given values
@@ -252,11 +251,13 @@ def _create_lookup_table(
     values_in_bytes = unique_values.tobytes()
     if values_in_bytes not in stored_lookup_tables:
         lookup_table_offset = _get_buffer_position(buffer)
-        stored_lookup_tables[values_in_bytes] = lookup_table_offset
+        stored_lookup_tables[values_in_bytes] = (
+            lookup_table_offset,
+             _get_encoded_bits(unique_values))
         buffer += values_in_bytes
     else:
-        lookup_table_offset = stored_lookup_tables[values_in_bytes]
-    return lookup_table_offset, _get_encoded_bits(unique_values)
+        lookup_table_offset, encoded_bits = stored_lookup_tables[values_in_bytes]
+    return lookup_table_offset, encoded_bits
 
 
 def _create_encoded_values(
@@ -291,7 +292,7 @@ def _create_segmentation_chunk(
     """Convert data in a dask array to a neuroglancer segmentation chunk"""
     bz, by, bx = block_size
     gz, gy, gx = _get_grid_size_from_block_size(dask_data.shape, block_size)
-    stored_lookup_tables: dict[bytes, int] = {}
+    stored_lookup_tables: dict[bytes, tuple[int, int]] = {}
     # big enough to hold the 64-bit starting block headers
     buffer = bytearray(gx * gy * gz * 8)
 

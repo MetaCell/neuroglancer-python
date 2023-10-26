@@ -1,12 +1,12 @@
 [project]
-name = "neuroglancer_utils"
+name = "neuroglancer-data-conversion"
 version = "0.0.1"
 dependencies = [
-    "neuroglancer",
+    "ome-zarr",
+    "numpy",
+    "dask",
     "zarr",
-    "numba",
-    "scikit-image",
-    "pooch",
+    "neuroglancer"
 ]
 
 [build-system]
@@ -15,5 +15,5 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["neuroglancer_utils"]
-exclude = ["examples", "tests", "notebooks", "data_conversion"]
+include = ["neuroglancer_data_conversion"]
+exclude = ["examples", "tests", "notebooks"]
