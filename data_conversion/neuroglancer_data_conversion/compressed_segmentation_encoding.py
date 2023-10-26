@@ -1,15 +1,15 @@
-from typing import Any
-from ome_zarr.io import parse_url
-from ome_zarr.reader import Reader
 from pathlib import Path
 from math import ceil
-from tqdm import tqdm
-import json
 import struct
 from dataclasses import dataclass
 
 import numpy as np
 import dask.array as da
+
+from neuroglancer_data_conversion.utils import (
+    pad_block,
+    get_grid_size_from_block_size,
+)
 
 DEBUG = False
 
@@ -35,79 +35,11 @@ class Chunk:
             f.write(self.buffer)
 
 
-def load_data(input_filepath: Path) -> da.Array:
-    """Load the OME-Zarr data and return a dask array"""
-    url = parse_url(input_filepath)
-    reader = Reader(url)
-    nodes = list(reader())
-    image_node = nodes[0]
-    dask_data = image_node.data[0]
-    return dask_data.persist()
-
-
-def _create_metadata(
-    chunk_size: tuple[int, int, int],
-    block_size: tuple[int, int, int],
-    data_size: tuple[int, int, int],
-):
-    """Create the metadata for the segmentation"""
-    metadata = {
-        "@type": "neuroglancer_multiscale_volume",
-        "data_type": "uint32",
-        "num_channels": 1,
-        "scales": [
-            {
-                "chunk_sizes": [list(chunk_size)],
-                "encoding": "compressed_segmentation",
-                "compressed_segmentation_block_size": list(block_size),
-                # TODO resolution is in nm, while for others there is no units
-                "resolution": [1, 1, 1],
-                "key": "data",
-                "size": list(data_size),
-            }
-        ],
-        "type": "segmentation",
-    }
-    return metadata
-
-
-def write_metadata(
-    metadata: dict[str, Any], output_directory: Path
-):
-    """Write the segmentation to the given directory"""
-    metadata_path = output_directory / "info"
-
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=4)
-
-
-def _get_grid_size_from_block_size(
-    data_shape: tuple[int, int, int], block_size: tuple[int, int, int]
-) -> tuple[int, int, int]:
-    """Calculate the grid size from the block size"""
-    gz = ceil(data_shape[0] / block_size[0])
-    gy = ceil(data_shape[1] / block_size[1])
-    gx = ceil(data_shape[2] / block_size[2])
-    return gx, gy, gz
-
-
 def _get_buffer_position(buffer: bytearray) -> int:
     """Return the current position in the buffer"""
     if len(buffer) % 4 != 0:
         raise ValueError("Buffer length must be a multiple of 4")
     return len(buffer) // 4
-
-
-def _pad_block(block: da.Array, block_size: tuple[int, int, int]) -> da.Array:
-    """Pad the block to the given block size with zeros"""
-    return da.pad(
-        block,
-        (
-            (0, block_size[0] - block.shape[0]),
-            (0, block_size[1] - block.shape[1]),
-            (0, block_size[2] - block.shape[2]),
-        ),
-    )
 
 
 def _get_encoded_bits(unique_values: np.ndarray) -> int:
@@ -225,7 +157,9 @@ def _create_block_header(
 
 
 def _create_lookup_table(
-    buffer: bytearray, stored_lookup_tables: dict[bytes, tuple[int, int]], unique_values: da.Array
+    buffer: bytearray,
+    stored_lookup_tables: dict[bytes, tuple[int, int]],
+    unique_values: da.Array,
 ) -> tuple[int, int]:
     """
     Create a lookup table for the given values
@@ -251,9 +185,11 @@ def _create_lookup_table(
     values_in_bytes = unique_values.tobytes()
     if values_in_bytes not in stored_lookup_tables:
         lookup_table_offset = _get_buffer_position(buffer)
+        encoded_bits = _get_encoded_bits(unique_values)
         stored_lookup_tables[values_in_bytes] = (
             lookup_table_offset,
-             _get_encoded_bits(unique_values))
+            encoded_bits,
+        )
         buffer += values_in_bytes
     else:
         lookup_table_offset, encoded_bits = stored_lookup_tables[values_in_bytes]
@@ -284,14 +220,14 @@ def _create_encoded_values(
     return encoded_values_offset
 
 
-def _create_segmentation_chunk(
+def create_segmentation_chunk(
     dask_data: da.Array,
     dimensions: tuple[tuple[int, int, int], tuple[int, int, int]],
     block_size: tuple[int, int, int] = (8, 8, 8),
 ):
     """Convert data in a dask array to a neuroglancer segmentation chunk"""
     bz, by, bx = block_size
-    gz, gy, gx = _get_grid_size_from_block_size(dask_data.shape, block_size)
+    gz, gy, gx = get_grid_size_from_block_size(dask_data.shape, block_size)
     stored_lookup_tables: dict[bytes, tuple[int, int]] = {}
     # big enough to hold the 64-bit starting block headers
     buffer = bytearray(gx * gy * gz * 8)
@@ -302,7 +238,7 @@ def _create_segmentation_chunk(
         ]
         unique_values, indices = da.unique(block, return_inverse=True)
         # TODO mismatch between dimensions and data size after padding
-        block = _pad_block(block, block_size)
+        block = pad_block(block, block_size)
 
         lookup_table_offset, encoded_bits = _create_lookup_table(
             buffer, stored_lookup_tables, unique_values
@@ -318,56 +254,3 @@ def _create_segmentation_chunk(
         )
 
     return Chunk(buffer, dimensions)
-
-
-def _iterate_chunks(dask_data: da.Array):
-    """Iterate over the chunks in the dask array"""
-    chunk_layout = dask_data.chunks
-
-    for zi, z in enumerate(chunk_layout[0]):
-        for yi, y in enumerate(chunk_layout[1]):
-            for xi, x in enumerate(chunk_layout[2]):
-                chunk = dask_data.blocks[zi, yi, xi]
-
-                # Calculate the chunk dimensions
-                start = (
-                    sum(chunk_layout[0][:zi]),
-                    sum(chunk_layout[1][:yi]),
-                    sum(chunk_layout[2][:xi]),
-                )
-                end = (start[0] + z, start[1] + y, start[2] + x)
-                dimensions = (start, end)
-                yield chunk, dimensions
-
-
-def create_segmentation(dask_data: da.Array, block_size):
-    """Yield the neuroglancer segmentation format chunks"""
-    to_iterate = _iterate_chunks(dask_data)
-    num_iters = np.prod(dask_data.numblocks)
-    for chunk, dimensions in tqdm(
-        to_iterate, desc="Processing chunks", total=num_iters
-    ):
-        yield _create_segmentation_chunk(chunk, dimensions, block_size)
-
-
-def main(filename, block_size=(64, 64, 64)):
-    """Convert the given OME-Zarr file to neuroglancer segmentation format with the given block size"""
-    print(f"Converting {filename} to neuroglancer compressed segmentation format")
-    dask_data = load_data(filename)
-    output_directory = filename.parent / f"precomputed-{filename.stem}"
-    output_directory.mkdir(parents=True, exist_ok=True)
-    for c in create_segmentation(dask_data, block_size):
-        c.write_to_directory(output_directory / "data")
-
-    metadata = _create_metadata(dask_data.chunksize, block_size, dask_data.shape)
-    write_metadata(metadata, output_directory)
-    print(f"Wrote segmentation to {output_directory}")
-
-
-if __name__ == "__main__":
-    base_directory = Path("/media/starfish/LargeSSD/data/cryoET/data")
-    actin_filename = base_directory / "00004_actin_ground_truth_zarr"
-    microtubules_filename = base_directory / "00004_MT_ground_truth_zarr"
-    block_size = (32, 32, 32)
-    main(actin_filename, block_size)
-    main(microtubules_filename, block_size)
