@@ -72,19 +72,14 @@ def _create_metadata(
     return metadata
 
 
-def write_segmentation(
-    input_data: list[Chunk], metadata: dict[str, Any], output_directory: Path
+def write_metadata(
+    metadata: dict[str, Any], output_directory: Path
 ):
     """Write the segmentation to the given directory"""
-    output_directory.mkdir(parents=True, exist_ok=True)
     metadata_path = output_directory / "info"
-    output_chunk_directory = output_directory / "data"
 
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=4)
-
-    for chunk in input_data:
-        chunk.write_to_directory(output_chunk_directory)
 
 
 def _get_grid_size_from_block_size(
@@ -358,10 +353,13 @@ def main(filename, block_size=(64, 64, 64)):
     """Convert the given OME-Zarr file to neuroglancer segmentation format with the given block size"""
     print(f"Converting {filename} to neuroglancer compressed segmentation format")
     dask_data = load_data(filename)
-    metadata = _create_metadata(dask_data.chunksize, block_size, dask_data.shape)
-    chunks = [c for c in create_segmentation(dask_data, block_size)]
     output_directory = filename.parent / f"precomputed-{filename.stem}"
-    write_segmentation(chunks, metadata, output_directory)
+    output_directory.mkdir(parents=True, exist_ok=True)
+    for c in create_segmentation(dask_data, block_size):
+        c.write_to_directory(output_directory / "data")
+
+    metadata = _create_metadata(dask_data.chunksize, block_size, dask_data.shape)
+    write_metadata(metadata, output_directory)
     print(f"Wrote segmentation to {output_directory}")
 
 
