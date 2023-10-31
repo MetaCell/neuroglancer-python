@@ -31,7 +31,7 @@ def add_image_layer(state):
     state.layers["brain"] = neuroglancer.ImageLayer(
         source=URL,
         shader=volume_rendering_shader,
-        volume_rendering=True,
+        volume_rendering_mode="off",
         panels=[add_render_panel()],
     )
 

@@ -26,8 +26,8 @@ if __name__ == "__main__":
         s.layers["image"] = neuroglancer.ImageLayer(
             source="precomputed://gs://neuroglancer-public-data/flyem_fib-25/image",
             tool_bindings={
-                "A": neuroglancer.VolumeRenderingTool(),
-                "B": neuroglancer.VolumeRenderingSamplesPerRayTool(),
+                "A": neuroglancer.VolumeRenderingModeTool(),
+                "B": neuroglancer.VolumeRenderingResolutionTool(),
             },
             panels=[add_render_panel()],
         )
