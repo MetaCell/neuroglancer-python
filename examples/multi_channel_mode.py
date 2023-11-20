@@ -43,11 +43,11 @@ def add_image_layer(state, **kwargs):
     )
     state.layers["image"] = neuroglancer.ImageLayer(
         source=local_volume,
-        volume_rendering_mode="direct",
-        volume_rendering_scale=200,
+        volume_rendering_mode="on",
+        volume_rendering_depth_samples=200,
         tool_bindings={
             "A": neuroglancer.VolumeRenderingModeTool(),
-            "B": neuroglancer.VolumeRenderingScaleTool(),
+            "B": neuroglancer.VolumeRenderingDepthSamplesTool(),
         },
         panels=[add_render_panel()],
         **kwargs,
@@ -90,15 +90,25 @@ def add_mesh_layer(state, **kwargs):
 
 def get_shader():
     return """
-#uicontrol float gain slider(min=0, max=10, default=1.0)
-#uicontrol invlerp normalized1(range=[0,20000], window=[0, 65355], clamp=true, channel=0)
-#uicontrol invlerp normalized2(range=[0,20000], window=[0, 65355], clamp=true, channel=1)
-#uicontrol vec3 color color(default="white")
+#uicontrol invlerp normalized1(range=[0,20000], window=[0, 20000], clamp=true, channel=0)
+#uicontrol invlerp normalized2(range=[0,20000], window=[0, 20000], clamp=true, channel=1)
+#uicontrol transferFunction tf1(range=[0,20000], channel=0)
+#uicontrol transferFunction tf2(range=[0,20000], channel=1)
+
+int usetf = 1;  
 void main() {
-    float val = normalized1();
-  	float val2 = normalized2();
-    emitRGBA(vec4(color, clamp(val + val2, 0.0, 1.0) * gain));
+  if (usetf == 1) {
+    vec4 color1 = tf1();
+  	vec4 color2 = tf2();
+    emitRGBA(color1 + color2);
+  }
+  else {
+    float norm1 = normalized1();
+    float norm2 = normalized2();
+    emitGrayscale(norm1 + norm2);
+  }
 }
+
 """
 
 
@@ -113,7 +123,10 @@ if __name__ == "__main__":
     update_title(viewer, "Volume control example")
     set_gpu_memory(viewer, gpu_memory=2)
     update_projection(viewer, orientation=[0.25, 0.6, 0.65, 0.3])
-    open_browser(viewer, hang=False)
-    sleep(4)  # TODO this is a hack to wait for viewer to open
+    with viewer.txn() as s:
+        print(type(s.layers))
+        print(s.layers["mesh"])
+    open_browser(viewer, hang=True)
+    # sleep(4)  # TODO this is a hack to wait for viewer to open
     # TODO can't at the moment as no trasnfer
     # update_projection(viewer, scale=455, depth=242)
