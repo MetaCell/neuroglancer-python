@@ -46,7 +46,7 @@ describe("Test Suite for Dataset", () => {
         // `--window-size=1600,1000`,
         "--ignore-certificate-errors",
       ],
-      headless: false,
+      headless: "new",
       devtools: false,
       defaultViewport: {
         width: 1600,
@@ -70,22 +70,11 @@ describe("Test Suite for Dataset", () => {
   afterAll(() => {
     browser.close();
   });
-  describe("Add Data", () => {
-
-    it("should take screenshot of main canvas", async () => {
-      const canvas = await page.waitForSelector('.neuroglancer-layer-group-viewer', {hidden:false});
-      await page.waitForTimeout(1000 * 6);
-      // await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
-      const groups_image = await canvas.screenshot();
-      await console.log("... taking canvas snapshot ...");
-      expect(groups_image).toMatchImageSnapshot({
-        ...SNAPSHOT_OPTIONS,
-        customSnapshotIdentifier: 'Main canvas',
-      });
-      await page.waitForTimeout(1000 * 3);
-    });
+  describe("2D Canvas", () => {
 
     it("should navigate to rendering tab", async () => {
+      console.log('Navigating to Rendering tab ...')
+      await page.waitForSelector('.neuroglancer-tab-label')
       await page.evaluate(() => {
         [...document.querySelectorAll('.neuroglancer-tab-label')].find(element => element.innerText === 'Rendering').click();
       });
@@ -93,10 +82,65 @@ describe("Test Suite for Dataset", () => {
       await page.waitForSelector('.neuroglancer-layer-control-control')
       const rendering_options = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
       expect(rendering_options.length).toBe(6);
+      console.log('Tab reached')
     })
 
-    it("should enable volume rendering", async () => {
+    it("should wait for resolution slices to be displayed", async () => {
+      console.log('Waiting for resolution slices to load ...')
+      try {
+        const isValueComplete = async () => {
+          const { valueBeforeSlash, valueAfterSlash } = await page.$eval('div[title="Number of chunks rendered"]', (element) => {
+            const textContent = element.textContent.trim();
+            const [valueBeforeSlash, valueAfterSlash] = textContent.split('/').map(part => part.trim());
+            
+            return { valueBeforeSlash, valueAfterSlash };
+          });
+          // console.log(valueBeforeSlash)
+          // console.log(valueAfterSlash)
+          return valueBeforeSlash >= (1 / 2) * valueAfterSlash;
+        };
 
+        const maxRetries = 20;
+        let retries = 0;
+    
+        while (retries < maxRetries) {
+          if (await isValueComplete()) {
+            console.log('Value is reached. Continuing with the next steps.');
+            break;
+          }
+          await page.waitForTimeout(3000); 
+          // console.log(retries)
+          retries++;
+        }
+    
+        if (retries === maxRetries) {
+          throw new Error('Timeout: Value did not become the expected within the specified time.');
+        }
+      } catch (error) {
+        console.error('An error occurred:', error.message);
+        throw error;
+      }
+
+    })
+
+
+    it("should take screenshot of main canvas", async () => {
+      const canvas = await page.waitForSelector('.neuroglancer-layer-group-viewer', {hidden:false});
+      await page.waitForTimeout(1000 * 6);
+      const groups_image = await canvas.screenshot();
+      await console.log("... taking canvas snapshot ...");
+      expect(groups_image).toMatchImageSnapshot({
+        ...SNAPSHOT_OPTIONS,
+        customSnapshotIdentifier: 'Main_canvas',
+      });
+      await page.waitForTimeout(1000 * 3);
+    });
+  })
+
+  describe("Canvas with Volume Rendering", () => {
+
+    it("should enable volume rendering", async () => {
+      console.log('Enabling Volume Rendering ...')
       await page.waitForSelector('select.neuroglancer-layer-control-control')
       const dropdown_buttons = await page.$$('select.neuroglancer-layer-control-control')
         await dropdown_buttons[1].click()
@@ -108,10 +152,124 @@ describe("Test Suite for Dataset", () => {
       await page.waitForSelector('div[title="Target resolution of data in screen pixels"]')
       const rendering_options_afterVolume = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
       expect(rendering_options_afterVolume.length).toBe(7);
-
+      console.log('Volume Rendering enabled')
     });
-    
 
+    it("should wait for 3D resolution samples to be displayed", async () => {
+      console.log('Waiting for 3D resolution samples to load ...')
+      await page.waitForSelector('.neuroglancer-tab-content.neuroglancer-image-dropdown > div > .neuroglancer-layer-control-container.neuroglancer-layer-options-control-container > .neuroglancer-render-scale-widget.neuroglancer-layer-control-control > .neuroglancer-render-scale-widget-legend > div[title="Number of chunks rendered"]')
+      try {
+        const isValueComplete = async () => {
+          const { valueBeforeSlash, valueAfterSlash } = await page.$eval('.neuroglancer-tab-content.neuroglancer-image-dropdown > div > .neuroglancer-layer-control-container.neuroglancer-layer-options-control-container > .neuroglancer-render-scale-widget.neuroglancer-layer-control-control > .neuroglancer-render-scale-widget-legend > div[title="Number of chunks rendered"]', (element) => {
+            const textContent = element.textContent.trim();
+            const [valueBeforeSlash, valueAfterSlash] = textContent.split('/').map(part => part.trim());
+            
+            return { valueBeforeSlash, valueAfterSlash };
+          });
+          // console.log(valueBeforeSlash)
+          // console.log(valueAfterSlash)
+          return valueBeforeSlash >= (1 / 4) * valueAfterSlash;
+        };
+
+        const maxRetries = 20;
+        let retries = 0;
+    
+        while (retries < maxRetries) {
+          if (await isValueComplete()) {
+            console.log('Value is reached. Continuing with the next steps.');
+            break;
+          }
+          await page.waitForTimeout(3000); 
+          // console.log(retries)
+          retries++;
+        }
+    
+        if (retries === maxRetries) {
+          throw new Error('Timeout: Value did not become the expected within the specified time.');
+        }
+      } catch (error) {
+        console.error('An error occurred:', error.message);
+        throw error;
+      }
+    })
+
+    
+    it("should take screenshot of main canvas with 3D", async () => {
+      const canvas = await page.waitForSelector('.neuroglancer-layer-group-viewer', {hidden:false});
+      await page.waitForTimeout(1000 * 6);
+      // await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+      const groups_image = await canvas.screenshot();
+      await console.log("... taking canvas snapshot ...");
+      expect(groups_image).toMatchImageSnapshot({
+        ...SNAPSHOT_OPTIONS,
+        customSnapshotIdentifier: 'Main_canvas_w_3D',
+      });
+      await page.waitForTimeout(1000 * 3);
+    });
+
+  })
+
+  describe("Canvas with colored 2D + 3D", () => {
+
+    it("should change the color map of the 3D rendering", async () => {
+      console.log('Changing color map ...')
+      await page.waitForSelector('.neuroglancer-tab-content.neuroglancer-transfer-function-widget.neuroglancer-layer-control-control')
+      await page.waitForSelector('#neuroglancer-tf-color-widget')
+      await page.$eval('#neuroglancer-tf-color-widget', (colorWidget) => {
+        colorWidget.value = '#00ff00'; 
+        const event = new Event('change', { bubbles: true });
+        colorWidget.dispatchEvent(event);
+      });
+      await page.waitForTimeout(1000 * 3);
+
+      await page.click('.neuroglancer-transfer-function-panel')
+      await page.waitForTimeout(1000 * 5);
+      console.log('Color map changed')
+    })
+
+    it("should take screenshot of main colored canvas with 3D", async () => {
+      const canvas = await page.waitForSelector('.neuroglancer-layer-group-viewer', {hidden:false});
+      await page.waitForTimeout(1000 * 6);
+      const groups_image = await canvas.screenshot();
+      await console.log("... taking canvas snapshot ...");
+      expect(groups_image).toMatchImageSnapshot({
+        ...SNAPSHOT_OPTIONS,
+        customSnapshotIdentifier: 'colored_canvas',
+      });
+      await page.waitForTimeout(1000 * 3);
+    });
+
+  })
+  describe("Canvas with Max Volume Rendering", () => {
+
+    it("should enable max volume rendering", async () => {
+      console.log('Enabling Max Volume Rendering ...')
+      await page.waitForSelector('select.neuroglancer-layer-control-control')
+      const dropdown_buttons = await page.$$('select.neuroglancer-layer-control-control')
+        await dropdown_buttons[1].click()
+      await page.waitForSelector('option[value="off"]')
+      await page.waitForSelector('option[value="on"]')
+      await page.waitForSelector('option[value="max"]')
+      await dropdown_buttons[1].select('max');
+      await page.waitForTimeout(2000);
+      await page.waitForSelector('div[title="Target resolution of data in screen pixels"]')
+      const rendering_options_afterVolume = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
+      expect(rendering_options_afterVolume.length).toBe(7);
+      console.log('Max Volume Rendering enabled')
+    })
+
+    it("should take screenshot of main canvas with Max 3D Rendering", async () => {
+      const canvas = await page.waitForSelector('.neuroglancer-layer-group-viewer', {hidden:false});
+      await page.waitForTimeout(1000 * 6);
+      // await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+      const groups_image = await canvas.screenshot();
+      await console.log("... taking canvas snapshot ...");
+      expect(groups_image).toMatchImageSnapshot({
+        ...SNAPSHOT_OPTIONS,
+        customSnapshotIdentifier: 'Max_3D_Rendering',
+      });
+      await page.waitForTimeout(1000 * 3);
+    });
 
   });
 
