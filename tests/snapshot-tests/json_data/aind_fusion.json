@@ -1,0 +1,92 @@
+{
+  "dimensions": {
+    "x": [
+      7.48e-7,
+      "m"
+    ],
+    "y": [
+      7.48e-7,
+      "m"
+    ],
+    "z": [
+      0.000001,
+      "m"
+    ],
+    "t": [
+      0.001,
+      "s"
+    ]
+  },
+  "position": [
+    29725.693359375,
+    17808.77734375,
+    11941.41796875,
+    0
+  ],
+  "crossSectionScale": 36.59823444367803,
+  "projectionOrientation": [
+    -0.13906417787075043,
+    0.09761909395456314,
+    0.22333434224128723,
+    0.959819495677948
+  ],
+  "projectionScale": 17983.459691529064,
+  "projectionDepth": -0.7497788410238861,
+  "layers": [
+    {
+      "type": "image",
+      "source": "zarr://s3://aind-open-data/exaSPIM_653980_2023-08-10_20-08-29_fusion_2023-08-24/fused.zarr/",
+      "localDimensions": {
+        "c'": [
+          1,
+          ""
+        ]
+      },
+      "localPosition": [
+        0
+      ],
+      "tab": "source",
+      "shader": "#uicontrol invlerp normalized(range=[0,200])\n#uicontrol transferFunction colormap(range=[0,200])\nvoid main() {\n  emitRGBA(colormap());\n}\n",
+      "shaderControls": {
+        "normalized": {
+          "range": [
+            67,
+            201
+          ]
+        },
+        "colormap": {
+          "color": "#1100ff",
+          "controlPoints": [
+            {
+              "position": 174,
+              "color": {
+                "0": 0,
+                "1": 0,
+                "2": 0,
+                "3": 0
+              }
+            },
+            {
+              "position": 450,
+              "color": {
+                "0": 255,
+                "1": 255,
+                "2": 255,
+                "3": 255
+              }
+            }
+          ]
+        }
+      },
+      "crossSectionRenderScale": 0.47527330239775784,
+      "volumeRenderingDepthSamples": 844.412726025728,
+      "name": "fused.zarr"
+    }
+  ],
+  "showSlices": false,
+  "selectedLayer": {
+    "visible": true,
+    "layer": "fused.zarr"
+  },
+  "layout": "4panel"
+}
