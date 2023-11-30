@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "x": [
+      6e-9,
+      "m"
+    ],
+    "y": [
+      6e-9,
+      "m"
+    ],
+    "z": [
+      3e-8,
+      "m"
+    ]
+  },
+  "position": [
+    5376.5,
+    6656.5,
+    924.5
+  ],
+  "crossSectionScale": 1,
+  "projectionScale": 16384,
+  "layers": [
+    {
+      "type": "image",
+      "source": "precomputed://gs://neuroglancer-public-data/kasthuri2011/image",
+      "tab": "source",
+      "shaderControls": {
+        "colormap": {
+          "controlPoints": [
+            {
+              "position": 204,
+              "color": {
+                "0": 0,
+                "1": 0,
+                "2": 0,
+                "3": 0
+              }
+            },
+            {
+              "position": 358,
+              "color": {
+                "0": 255,
+                "1": 255,
+                "2": 255,
+                "3": 255
+              }
+            }
+          ]
+        }
+      },
+      "name": "image"
+    }
+  ],
+  "selectedLayer": {
+    "visible": true,
+    "layer": "image"
+  },
+  "layout": "4panel"
+}
