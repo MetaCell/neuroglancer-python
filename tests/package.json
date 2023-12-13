@@ -4,7 +4,7 @@
   "description": "",
   "main": "babel.config.js",
   "scripts": {
-    "test": "jest --verbose"
+    "test": "./node_modules/.bin/jest --verbose"
   },
   "author": "",
   "license": "ISC",
