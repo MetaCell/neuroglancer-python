@@ -34,4 +34,70 @@ jobs:
           npm test aind_fusion_regression
       env:
           CI: true
+  FAFB_Fly_Brain-test:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-20.04
+    container: lironavon/docker-puppeteer-container:14.16.0
+    env:
+      CI: true
+    steps:
+    - uses: actions/checkout@v1
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v1
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache-dependency-path: tests/package-lock.json
+    - name: FAFB Fly Brain Regression test
+      run: |
+          cd tests
+          #install dependencies
+          npm install
+          # run test
+          npm test FAFB_Fly_Brain_regression
+      env:
+          CI: true
+  flyEM_Hemibrain-test:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-20.04
+    container: lironavon/docker-puppeteer-container:14.16.0
+    env:
+      CI: true
+    steps:
+    - uses: actions/checkout@v1
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v1
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache-dependency-path: tests/package-lock.json
+    - name: FlyEM Hemibrain Regression test
+      run: |
+          cd tests
+          #install dependencies
+          npm install
+          # run test
+          npm test flyEM_Hemibrain_regression
+      env:
+          CI: true
+  Janelia_flyEM_Hemibrain-test:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-20.04
+    container: lironavon/docker-puppeteer-container:14.16.0
+    env:
+      CI: true
+    steps:
+    - uses: actions/checkout@v1
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v1
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache-dependency-path: tests/package-lock.json
+    - name: Janelia FlyEM Hemibrain Regression test
+      run: |
+          cd tests
+          #install dependencies
+          npm install
+          # run test
+          npm test Janlie_FlyEM_Hemibrain_regression
+      env:
+          CI: true
   
