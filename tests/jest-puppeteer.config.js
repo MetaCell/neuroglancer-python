@@ -1,7 +1,7 @@
 module.exports = {
     launch: {
     //   headless: 'new',
-      headless: false,
+      headless: true,
       defaultViewport: {
         width: 1300,
         height: 1024
