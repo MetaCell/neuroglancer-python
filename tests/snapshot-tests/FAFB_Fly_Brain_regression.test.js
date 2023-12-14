@@ -2,7 +2,7 @@
 // import "expect-puppeteer";
 const { toMatchImageSnapshot } = require('jest-image-snapshot');
 expect.extend({ toMatchImageSnapshot });
-const puppeteer = require('puppeteer')
+import 'expect-puppeteer';
 const path = require("path");
 var scriptName = path.basename(__filename, ".js");
 import * as selectors from "./selectors.js";
@@ -26,35 +26,18 @@ const SNAPSHOT_OPTIONS = {
 
 jest.setTimeout(300000);
 
-let page;
-let browser;
+
 
 describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
   beforeAll(async () => {
-    browser = await puppeteer.launch({
-      args: [
-        "--no-sandbox",
-        "--ignore-certificate-errors",
-      ],
-      headless: 'new',
-      // headless: false,
-      devtools: false,
-      defaultViewport: {
-        width: 1600,
-        height: 1000,
-      },
-    });
-
-    page = await browser.newPage();
+    
     await page.goto(baseURL);
     await page.waitForTimeout(3000);
     await page.waitForSelector(selectors.SIDE_PANEL);
 
   });
 
-  afterAll(() => {
-    browser.close();
-  });
+  
   describe("2D Canvas", () => {
 
     it("should navigate to rendering tab", async () => {
