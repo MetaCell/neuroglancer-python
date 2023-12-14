@@ -35,9 +35,7 @@ describe("Test Suite for Janelia FlyEM Dataset", () => {
 
   });
 
-  afterAll(() => {
-    browser.close();
-  });
+  
   describe("2D Canvas", () => {
 
     it("should navigate to rendering tab", async () => {
