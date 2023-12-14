@@ -97,7 +97,7 @@ jobs:
           #install dependencies
           npm install
           # run test
-          npm test Janlie_FlyEM_Hemibrain_regression
+          npm test Janelia_FlyEM_Hemibrain_regression
       env:
           CI: true
   
