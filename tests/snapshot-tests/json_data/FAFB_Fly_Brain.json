@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "x": [
+      8e-9,
+      "m"
+    ],
+    "y": [
+      8e-9,
+      "m"
+    ],
+    "z": [
+      4e-8,
+      "m"
+    ]
+  },
+  "position": [
+    62208.5,
+    33536.5,
+    3531.5
+  ],
+  "crossSectionScale": 1,
+  "projectionScale": 131072,
+  "layers": [
+    {
+      "type": "image",
+      "source": "precomputed://gs://neuroglancer-fafb-data/fafb_v14/fafb_v14_clahe",
+      "tab": "source",
+      "shaderControls": {
+        "colormap": {
+          "controlPoints": [
+            {
+              "position": 204,
+              "color": {
+                "0": 0,
+                "1": 0,
+                "2": 0,
+                "3": 0
+              }
+            },
+            {
+              "position": 358,
+              "color": {
+                "0": 255,
+                "1": 255,
+                "2": 255,
+                "3": 255
+              }
+            }
+          ]
+        }
+      },
+      "name": "fafb_v14_clahe"
+    }
+  ],
+  "selectedLayer": {
+    "visible": true,
+    "layer": "fafb_v14_clahe"
+  },
+  "layout": "4panel"
+}

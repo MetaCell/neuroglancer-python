@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "x": [
+      8e-9,
+      "m"
+    ],
+    "y": [
+      8e-9,
+      "m"
+    ],
+    "z": [
+      8e-9,
+      "m"
+    ]
+  },
+  "position": [
+    3223.5,
+    3321.5,
+    4045.5
+  ],
+  "crossSectionScale": 1,
+  "projectionScale": 8192,
+  "layers": [
+    {
+      "type": "image",
+      "source": "precomputed://gs://neuroglancer-public-data/flyem_fib-25/image",
+      "tab": "source",
+      "shaderControls": {
+        "colormap": {
+          "controlPoints": [
+            {
+              "position": 204,
+              "color": {
+                "0": 0,
+                "1": 0,
+                "2": 0,
+                "3": 0
+              }
+            },
+            {
+              "position": 358,
+              "color": {
+                "0": 255,
+                "1": 255,
+                "2": 255,
+                "3": 255
+              }
+            }
+          ]
+        }
+      },
+      "name": "image"
+    }
+  ],
+  "selectedLayer": {
+    "visible": true,
+    "layer": "image"
+  },
+  "layout": "4panel"
+}

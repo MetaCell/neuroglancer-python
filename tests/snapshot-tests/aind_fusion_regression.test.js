@@ -1,8 +1,7 @@
 //IMPORTS:
-// import "expect-puppeteer";
+import "expect-puppeteer";
 const { toMatchImageSnapshot } = require('jest-image-snapshot');
 expect.extend({ toMatchImageSnapshot });
-const puppeteer = require('puppeteer')
 const path = require("path");
 var scriptName = path.basename(__filename, ".js");
 import * as selectors from "./selectors.js";
@@ -26,34 +25,19 @@ const SNAPSHOT_OPTIONS = {
 
 jest.setTimeout(300000);
 
-let page;
-let browser;
 
-describe("Test Suite for Dataset", () => {
+
+describe("Test Suite for AIND Fusion Dataset", () => {
   beforeAll(async () => {
-    browser = await puppeteer.launch({
-      args: [
-        "--no-sandbox",
-        "--ignore-certificate-errors",
-      ],
-      headless: 'new',
-      devtools: false,
-      defaultViewport: {
-        width: 1600,
-        height: 1000,
-      },
-    });
+    
 
-    page = await browser.newPage();
     await page.goto(baseURL);
     await page.waitForTimeout(3000);
     await page.waitForSelector(selectors.SIDE_PANEL);
 
   });
 
-  afterAll(() => {
-    browser.close();
-  });
+ 
   describe("2D Canvas", () => {
 
     it("should navigate to rendering tab", async () => {
@@ -82,7 +66,7 @@ describe("Test Suite for Dataset", () => {
           return valueBeforeSlash >= (1 / 2) * valueAfterSlash;
         };
 
-        const maxRetries = 20;
+        const maxRetries = 50;
         let retries = 0;
     
         while (retries < maxRetries) {
@@ -90,7 +74,7 @@ describe("Test Suite for Dataset", () => {
             console.log('Value is reached. Continuing with the next steps.');
             break;
           }
-          await page.waitForTimeout(3000); 
+          await page.waitForTimeout(4000); 
           retries++;
         }
     
@@ -108,7 +92,8 @@ describe("Test Suite for Dataset", () => {
     it("should take screenshot of main canvas", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,
@@ -148,10 +133,10 @@ describe("Test Suite for Dataset", () => {
             return { valueBeforeSlash, valueAfterSlash };
           });
           
-          return valueBeforeSlash >= (1 / 4) * valueAfterSlash;
+          return valueBeforeSlash >= (1 / 4.5) * valueAfterSlash;
         };
 
-        const maxRetries = 20;
+        const maxRetries = 50;
         let retries = 0;
     
         while (retries < maxRetries) {
@@ -159,7 +144,7 @@ describe("Test Suite for Dataset", () => {
             console.log('Value is reached. Continuing with the next steps.');
             break;
           }
-          await page.waitForTimeout(3000); 
+          await page.waitForTimeout(4000); 
           retries++;
         }
     
@@ -176,7 +161,8 @@ describe("Test Suite for Dataset", () => {
     it("should take screenshot of main canvas with 3D", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,
@@ -209,7 +195,8 @@ describe("Test Suite for Dataset", () => {
     it("should take screenshot of main canvas with Max 3D Rendering", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,
@@ -249,7 +236,8 @@ describe("Test Suite for Dataset", () => {
     it("should take screenshot of main colored canvas with 3D", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,

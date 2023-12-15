@@ -1,0 +1,60 @@
+{
+  "dimensions": {
+    "x": [
+      8e-9,
+      "m"
+    ],
+    "y": [
+      8e-9,
+      "m"
+    ],
+    "z": [
+      8e-9,
+      "m"
+    ]
+  },
+  "position": [
+    17213.5,
+    19862.5,
+    20697.5
+  ],
+  "crossSectionScale": 1,
+  "projectionScale": 65536,
+  "layers": [
+    {
+      "type": "image",
+      "source": "precomputed://gs://neuroglancer-janelia-flyem-hemibrain/emdata/clahe_yz/jpeg",
+      "tab": "source",
+      "shaderControls": {
+        "colormap": {
+          "controlPoints": [
+            {
+              "position": 204,
+              "color": {
+                "0": 0,
+                "1": 0,
+                "2": 0,
+                "3": 0
+              }
+            },
+            {
+              "position": 358,
+              "color": {
+                "0": 255,
+                "1": 255,
+                "2": 255,
+                "3": 255
+              }
+            }
+          ]
+        }
+      },
+      "name": "jpeg"
+    }
+  ],
+  "selectedLayer": {
+    "visible": true,
+    "layer": "jpeg"
+  },
+  "layout": "4panel"
+}
