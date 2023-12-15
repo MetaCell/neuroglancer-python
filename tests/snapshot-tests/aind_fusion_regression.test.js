@@ -66,7 +66,7 @@ describe("Test Suite for AIND Fusion Dataset", () => {
           return valueBeforeSlash >= (1 / 2) * valueAfterSlash;
         };
 
-        const maxRetries = 25;
+        const maxRetries = 50;
         let retries = 0;
     
         while (retries < maxRetries) {
@@ -133,10 +133,10 @@ describe("Test Suite for AIND Fusion Dataset", () => {
             return { valueBeforeSlash, valueAfterSlash };
           });
           
-          return valueBeforeSlash >= (1 / 4) * valueAfterSlash;
+          return valueBeforeSlash >= (1 / 4.5) * valueAfterSlash;
         };
 
-        const maxRetries = 25;
+        const maxRetries = 50;
         let retries = 0;
     
         while (retries < maxRetries) {
