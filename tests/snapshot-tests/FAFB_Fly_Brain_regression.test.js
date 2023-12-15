@@ -92,7 +92,8 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
     it("should take screenshot of main canvas", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,
@@ -160,7 +161,8 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
     it("should take screenshot of main canvas with 3D", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,
@@ -193,7 +195,8 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
     it("should take screenshot of main canvas with Max 3D Rendering", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,
@@ -233,7 +236,8 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
     it("should take screenshot of main colored canvas with 3D", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
       await page.waitForTimeout(1000 * 6);
-      const groups_image = await canvas.screenshot();
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
       expect(groups_image).toMatchImageSnapshot({
         ...SNAPSHOT_OPTIONS,
