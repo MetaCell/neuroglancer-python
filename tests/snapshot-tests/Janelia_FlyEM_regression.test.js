@@ -5,9 +5,10 @@ expect.extend({ toMatchImageSnapshot });
 const path = require("path");
 var scriptName = path.basename(__filename, ".js");
 import * as selectors from "./selectors.js";
+import { URL_START } from "./constants.js";
 
 //PAGE INFO:
-const baseURL = process.env.url || "https://neuroglancer.dev.metacell.us/#!%7B%22dimensions%22:%7B%22x%22:%5B8e-9%2C%22m%22%5D%2C%22y%22:%5B8e-9%2C%22m%22%5D%2C%22z%22:%5B8e-9%2C%22m%22%5D%7D%2C%22position%22:%5B3223.5%2C3321.5%2C4045.5%5D%2C%22crossSectionScale%22:1%2C%22projectionScale%22:8192%2C%22layers%22:%5B%7B%22type%22:%22image%22%2C%22source%22:%22precomputed://gs://neuroglancer-public-data/flyem_fib-25/image%22%2C%22tab%22:%22source%22%2C%22shaderControls%22:%7B%22colormap%22:%7B%22controlPoints%22:%5B%7B%22position%22:204%2C%22color%22:%7B%220%22:0%2C%221%22:0%2C%222%22:0%2C%223%22:0%7D%7D%2C%7B%22position%22:358%2C%22color%22:%7B%220%22:255%2C%221%22:255%2C%222%22:255%2C%223%22:255%7D%7D%5D%7D%7D%2C%22name%22:%22image%22%7D%5D%2C%22selectedLayer%22:%7B%22visible%22:true%2C%22layer%22:%22image%22%7D%2C%22layout%22:%224panel%22%7D";
+const baseURL = process.env.url || `${URL_START}#!%7B%22dimensions%22:%7B%22x%22:%5B8e-9%2C%22m%22%5D%2C%22y%22:%5B8e-9%2C%22m%22%5D%2C%22z%22:%5B8e-9%2C%22m%22%5D%7D%2C%22position%22:%5B3223.5%2C3321.5%2C4045.5%5D%2C%22crossSectionScale%22:1%2C%22projectionScale%22:8192%2C%22layers%22:%5B%7B%22type%22:%22image%22%2C%22source%22:%22precomputed://gs://neuroglancer-public-data/flyem_fib-25/image%22%2C%22tab%22:%22source%22%2C%22shaderControls%22:%7B%22colormap%22:%7B%22controlPoints%22:%5B%7B%22position%22:204%2C%22color%22:%7B%220%22:0%2C%221%22:0%2C%222%22:0%2C%223%22:0%7D%7D%2C%7B%22position%22:358%2C%22color%22:%7B%220%22:255%2C%221%22:255%2C%222%22:255%2C%223%22:255%7D%7D%5D%7D%7D%2C%22name%22:%22image%22%7D%5D%2C%22selectedLayer%22:%7B%22visible%22:true%2C%22layer%22:%22image%22%7D%2C%22layout%22:%224panel%22%7D`;
 const PAGE_WAIT = 3000;
 const TIMEOUT = 60000;
 
