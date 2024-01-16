@@ -31,3 +31,13 @@ npm run test
 ```
 
 You can update `constants.js` to point to some different data.
+
+### Running individual tests
+
+```bash
+npm install jest --global
+cd tests
+jest MATCH --config=jest.config.js
+```
+
+where `MATCH` is a substring of the test name.
