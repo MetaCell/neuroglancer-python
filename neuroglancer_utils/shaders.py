@@ -44,3 +44,10 @@ void main() {
   }
 }
 """
+
+simple_shader = """
+#uicontrol invlerp normalized(range=[0, 250], window=[0, 65535], clamp=true)
+void main() {
+  emitGrayscale(normalized());
+}
+"""
