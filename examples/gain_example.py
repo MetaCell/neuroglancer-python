@@ -36,7 +36,7 @@ def add_image_layer(state):
         volumeRenderingDepthSamples=512,
         tool_bindings={
             "A": neuroglancer.VolumeRenderingDepthSamplesTool(),
-            "B": neuroglancer.GainTool(),  
+            "B": neuroglancer.VolumeRenderingGainTool(), 
         }
     )
 
@@ -54,11 +54,10 @@ if __name__ == "__main__":
     viewer = launch_nglancer()
     with viewer.txn() as s:
         add_image_layer(s)
-        s.layers["brain"].gain = 0.01
+        s.layers["brain"].volume_rendering_gain = 0.01
         make_cordinate_space(s)
     generic_volume_setup(viewer)
     open_browser(viewer, hang=False)
     sleep(4) 
     update_projection(viewer, orientation=[0, 0, 0, 1], scale=50000, depth=-0.12)
     # print(s.layers["brain"]) 
-
