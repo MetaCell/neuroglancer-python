@@ -41,9 +41,9 @@ def add_image_layer(state, **kwargs):
     local_volume = neuroglancer.LocalVolume(data, dimensions)
     state.layers["image"] = neuroglancer.ImageLayer(
         source=local_volume,
-        volume_rendering_mode="direct",
+        volume_rendering=True,
         tool_bindings={
-            "A": neuroglancer.VolumeRenderingModeTool(),
+            "A": neuroglancer.VolumeRenderingGainTool(),
         },
         panels=[add_render_panel()],
         **kwargs,

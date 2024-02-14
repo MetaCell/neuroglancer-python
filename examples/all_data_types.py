@@ -51,7 +51,7 @@ def add_image_layer(state, dtype, **kwargs):
     local_volume = neuroglancer.LocalVolume(data, dimensions)
     state.layers[f"image {dtype}"] = neuroglancer.ImageLayer(
         source=local_volume,
-        volume_rendering_mode="on",
+        volume_rendering=True,
         # tool_bindings={
         #     "A": neuroglancer.VolumeRenderingModeTool(),
         # },
@@ -78,6 +78,6 @@ if __name__ == "__main__":
     update_title(viewer, "Volume control example")
     set_gpu_memory(viewer, gpu_memory=2)
     update_projection(viewer, orientation=[0.25, 0.6, 0.65, 0.3])
-    open_browser(viewer, hang=True)
+    open_browser(viewer, hang=False)
     sleep(4) # TODO this is a hack to wait for viewer to open
     update_projection(viewer, scale=4555, depth=4429)
