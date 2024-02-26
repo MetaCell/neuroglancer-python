@@ -45,6 +45,7 @@ def create_sphere_in_cube(size, radius):
     random_values = np.random.rand(*shape) / 20.0
     where_zero = sphere < 0.1
     sphere[where_zero] = random_values[where_zero]
+    sphere[0:size // 10, :, :] = 0.5
 
     return sphere.astype(np.float32)
 
