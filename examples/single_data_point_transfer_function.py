@@ -22,7 +22,7 @@ void main() {
                 {"input": 0, "color": "#000000", "opacity": 0.0},
                 {"input": 84, "color": "#ffffff", "opacity": 1.0},
             ],
-            "range": [0, 100],
+            "range": [100, 0],
             "channel": [],
             "color": "#ff00ff",
         }
