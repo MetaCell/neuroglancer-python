@@ -15,8 +15,8 @@
 from time import sleep
 
 import neuroglancer
-import numpy as np
-import zarr
+from neuroglancer_utils.create_datasets.create_sphere import create_volume
+from neuroglancer_utils.local_server import create_server
 
 from neuroglancer_utils.layer_utils import add_render_panel
 from neuroglancer_utils.viewer_utils import (
@@ -29,37 +29,9 @@ from neuroglancer_utils.viewer_utils import (
     update_title,
 )
 
-
-def create_sphere_in_cube(size, radius):
-    shape = (size,) * 3
-    # Create a grid of coordinates
-    x = np.linspace(-1, 1, shape[0])
-    y = np.linspace(-1, 1, shape[1])
-    z = np.linspace(-1, 1, shape[2])
-    xx, yy, zz = np.meshgrid(x, y, z, indexing="ij")
-
-    # Equation of a sphere
-    sphere = xx**2 + yy**2 + zz**2 <= radius**2
-
-    sphere = sphere.astype(np.float32)
-    random_values = np.random.rand(*shape) / 20.0
-    where_zero = sphere < 0.1
-    sphere[where_zero] = random_values[where_zero]
-    sphere[0:size // 10, :, :] = 0.5
-
-    return sphere.astype(np.float32)
-
-
 def add_image_layer(state, **kwargs):
-    array = create_sphere_in_cube(500, 0.6) * 255
-    data = zarr.array(array)
-    print(data.info)
-    dimensions = neuroglancer.CoordinateSpace(
-        names=["x", "y", "z"], units="nm", scales=[400, 400, 400]
-    )
-    local_volume = neuroglancer.LocalVolume(data, dimensions)
     state.layers["image"] = neuroglancer.ImageLayer(
-        source=local_volume,
+        source="precomputed://http://127.0.0.1:9000/sphere",
         volume_rendering_mode="max",
         tool_bindings={
             "A": neuroglancer.VolumeRenderingGainTool(),
@@ -80,6 +52,8 @@ void main() {
 
 
 if __name__ == "__main__":
+    create_volume()
+    create_server(directory="datasets")
     viewer = launch_nglancer()
     with viewer.txn() as s:
         add_image_layer(s, shader=get_shader())
