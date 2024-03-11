@@ -92,21 +92,12 @@ def get_shader():
     return """
 #uicontrol invlerp normalized1(range=[0,20000], window=[0, 20000], clamp=true, channel=0)
 #uicontrol invlerp normalized2(range=[0,20000], window=[0, 20000], clamp=true, channel=1)
-#uicontrol transferFunction tf1(range=[0,20000], channel=0)
-#uicontrol transferFunction tf2(range=[0,20000], channel=1)
 
-int usetf = 1;  
 void main() {
-  if (usetf == 1) {
-    vec4 color1 = tf1();
-  	vec4 color2 = tf2();
-    emitRGBA(color1 + color2);
-  }
-  else {
     float norm1 = normalized1();
     float norm2 = normalized2();
+    emitIntensity(norm1 + norm2);
     emitGrayscale(norm1 + norm2);
-  }
 }
 
 """
@@ -116,17 +107,132 @@ if __name__ == "__main__":
     viewer = launch_nglancer()
     with viewer.txn() as s:
         add_image_layer(s, shader=get_shader())
-        add_mesh_layer(s)
     threedee_view(viewer)
     remove_axis_lines(viewer)
     show_statistics(viewer)
-    update_title(viewer, "Volume control example")
+    update_title(viewer, "Multi-channel example")
     set_gpu_memory(viewer, gpu_memory=2)
     update_projection(viewer, orientation=[0.25, 0.6, 0.65, 0.3])
-    with viewer.txn() as s:
-        print(type(s.layers))
-        print(s.layers["mesh"])
-    open_browser(viewer, hang=True)
+    open_browser(viewer, hang=False)
     # sleep(4)  # TODO this is a hack to wait for viewer to open
     # TODO can't at the moment as no trasnfer
     # update_projection(viewer, scale=455, depth=242)
+
+"""
+Here is another useful state
+
+{
+  "title": "Multi-channel example",
+  "dimensions": {
+    "x": [
+      2.6e-7,
+      "m"
+    ],
+    "y": [
+      2.6e-7,
+      "m"
+    ],
+    "z": [
+      2.9e-7,
+      "m"
+    ]
+  },
+  "position": [
+    129.119873046875,
+    144.7524871826172,
+    30.53437042236328
+  ],
+  "crossSectionScale": 1,
+  "projectionOrientation": [
+    -0.027111563831567764,
+    0.018441088497638702,
+    0.7081640362739563,
+    0.7052861452102661
+  ],
+  "projectionScale": 256,
+  "projectionDepth": -2.4893534183932,
+  "layers": [
+    {
+      "type": "image",
+      "source": "python://volume/34193c9b5ed717d01aad312fa7ef10a69ad55d52.7bb6f5bff724cdc35abc11319dd7f7589fe8e87d",
+      "tab": "annotations",
+      "panels": [
+        {
+          "side": "left",
+          "row": 1,
+          "size": 539,
+          "tab": "rendering",
+          "tabs": [
+            "rendering",
+            "source"
+          ]
+        }
+      ],
+      "shader": "#uicontrol invlerp normalized2(range=[0,20000], window=[0, 20000], clamp=true, channel=1)\n\nvoid main() {\n    float norm2 = normalized2();\n    emitGrayscale(norm2);\n}\n\n",
+      "shaderControls": {
+        "normalized2": {
+          "window": [
+            1430,
+            12407
+          ]
+        }
+      },
+      "channelDimensions": {
+        "c^": [
+          1,
+          ""
+        ]
+      },
+      "volumeRenderingMode": "max",
+      "volumeRenderingDepthSamples": 652.3555001881789,
+      "name": "image"
+    },
+    {
+      "type": "image",
+      "source": "python://volume/34193c9b5ed717d01aad312fa7ef10a69ad55d52.7bb6f5bff724cdc35abc11319dd7f7589fe8e87d",
+      "toolBindings": {
+        "A": "volumeRenderingMode",
+        "B": "volumeRenderingDepthSamples"
+      },
+      "tab": "annotations",
+      "panels": [
+        {
+          "side": "left",
+          "row": 2,
+          "size": 539,
+          "tab": "rendering",
+          "tabs": [
+            "rendering",
+            "source"
+          ]
+        }
+      ],
+      "shader": "\n#uicontrol invlerp normalized1(range=[0,20000], window=[0, 20000], clamp=true, channel=0)\n\nvoid main() {\n    float norm1 = normalized1();\n    emitGrayscale(norm1);\n}\n\n",
+      "channelDimensions": {
+        "c^": [
+          1,
+          ""
+        ]
+      },
+      "volumeRenderingMode": "on",
+      "volumeRenderingDepthSamples": 652.3555001881789,
+      "name": "image1"
+    }
+  ],
+  "showAxisLines": false,
+  "gpuMemoryLimit": 2000000000,
+  "layout": "3d",
+  "statistics": {
+    "side": "left",
+    "row": 3,
+    "size": 539,
+    "visible": true
+  },
+  "helpPanel": {
+    "row": 4
+  },
+  "settingsPanel": {
+    "row": 5
+  }
+}
+"""
