@@ -23,7 +23,7 @@ def create_sphere_in_cube(size, radius):
     return sphere.astype(np.float32) * 255.0
 
 
-def create_volume(output_path="file://datasets/sphere"):
+def create_sphere(output_path="file://datasets/sphere"):
     rawdata = create_sphere_in_cube(100, 0.9)
     #rawdata = np.full(shape=(100, 100, 100), fill_value=255.0).astype(np.float32)
     CloudVolume.from_numpy(

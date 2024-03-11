@@ -15,7 +15,7 @@
 from time import sleep
 
 import neuroglancer
-from neuroglancer_utils.create_datasets.create_sphere import create_volume
+from neuroglancer_utils.create_datasets.create_sphere import create_sphere
 from neuroglancer_utils.local_server import create_server
 
 from neuroglancer_utils.layer_utils import add_render_panel
@@ -52,7 +52,7 @@ void main() {
 
 
 if __name__ == "__main__":
-    create_volume()
+    create_sphere()
     create_server(directory="datasets")
     viewer = launch_nglancer()
     with viewer.txn() as s:

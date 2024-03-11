@@ -1,7 +1,7 @@
 from cloudvolume import CloudVolume
 import numpy as np
 
-def create_volume(output_path="file://datasets/cube"):
+def create_cube(output_path="file://datasets/cube"):
     rawdata = np.full(shape=(100, 100, 100), fill_value=255.0).astype(np.float32)
     CloudVolume.from_numpy(
         rawdata,
