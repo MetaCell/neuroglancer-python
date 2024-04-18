@@ -28,7 +28,6 @@ from neuroglancer_utils.viewer_utils import (
     update_title,
     set_gpu_memory,
 )
-from neuroglancer_utils.layer_utils import add_render_panel
 
 DATA_TYPES = [
     "uint8",
@@ -44,7 +43,6 @@ DATA_TYPES = [
 def add_image_layer(state, dtype, **kwargs):
     shape = (2500, 2500, 250)
     data = zarr.full(shape=shape, fill_value=70, chunks=[157, 157, 32], dtype=dtype)
-    print(data.info)
     dimensions = neuroglancer.CoordinateSpace(
         names=["x", "y", "z"], units="nm", scales=[40, 40, 400]
     )
@@ -55,13 +53,12 @@ def add_image_layer(state, dtype, **kwargs):
         # tool_bindings={
         #     "A": neuroglancer.VolumeRenderingModeTool(),
         # },
-        panels=[add_render_panel()],
         **kwargs,
     )
 
 def get_shader():
     return """
-#uicontrol transferFunction colormap(range=[0,128])
+#uicontrol transferFunction colormap(window=[0,120])
 void main() {
     emitRGBA(colormap());
     }
