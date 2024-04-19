@@ -5,27 +5,31 @@ from neuroglancer_utils.viewer_utils import (
     launch_nglancer,
     open_browser,
 )
+from neuroglancer_utils.layer_utils import add_render_panel
 
 from time import sleep
 
 
 def colormap_version(viewer):
     shader = """
+#uicontrol invlerp normalized
 #uicontrol transferFunction colormap
 void main() {
     emitRGBA(colormap());
 }
 """
     shaderControls = {
-        "colormap": {
-            "controlPoints": [
-                {"input": 0, "color": "#000000", "opacity": 0.0},
-                {"input": 84, "color": "#ffffff", "opacity": 1.0},
-            ],
-            "range": [100, 0],
+        "normalized": {
+            "range": [0, 100],
+            "window": [0, 100],
             "channel": [],
-            "color": "#ff00ff",
-        }
+        },
+        "colormap": {
+            "controlPoints": [[0, "#000000", 0.0], [84, "#ffffff", 1.0]],
+            "window": [0, 100],
+            "channel": [],
+            "defaultColor": "#ff00ff",
+        },
     }
     with viewer.txn() as s:
         s.dimensions = neuroglancer.CoordinateSpace(
@@ -39,6 +43,7 @@ void main() {
                     dimensions=s.dimensions,
                     data=np.full(shape=(1, 1), dtype=np.uint32, fill_value=42),
                 ),
+                panels=[add_render_panel()],
             ),
             visible=True,
             shader=shader,
@@ -56,6 +61,11 @@ if __name__ == "__main__":
     open_browser(viewer, hang=False)
     sleep(2)
     colormap_version(viewer)
+
+    with viewer.txn() as s:
+        layer = s.layers[0]
+        print(layer.shader_controls["normalized"])
+        print(layer.shader_controls["colormap"])
 
     # inp = input("Press enter when ready to change the shader controls...")
     # with viewer.txn() as s:
