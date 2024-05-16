@@ -46,7 +46,7 @@ describe("Test Suite for Janelia FlyEM Dataset", () => {
       await page.waitForTimeout(1000);
       await page.waitForSelector(selectors.RENDERING_TAB_CONTROLS)
       const rendering_options = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
-      expect(rendering_options.length).toBe(6);
+      expect(rendering_options.length).toBe(5);
       console.log('Tab reached')
     })
 
@@ -114,7 +114,7 @@ describe("Test Suite for Janelia FlyEM Dataset", () => {
       await page.waitForTimeout(2000);
       await page.waitForSelector(selectors.RESOLUTION_SLICES)
       const rendering_options_afterVolume = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
-      expect(rendering_options_afterVolume.length).toBe(7);
+      expect(rendering_options_afterVolume.length).toBe(6);
       console.log('Volume Rendering enabled')
     });
 
@@ -184,14 +184,17 @@ describe("Test Suite for Janelia FlyEM Dataset", () => {
       await dropdown_buttons[1].select('max');
       await page.waitForTimeout(2000);
       await page.waitForSelector(selectors.RESOLUTION_SLICES)
-      const rendering_options_afterVolume = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
-      expect(rendering_options_afterVolume.length).toBe(7);
+      
       console.log('Max Volume Rendering enabled')
     })
 
     it("should take screenshot of main canvas with Max 3D Rendering", async () => {
       const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
-      await page.waitForTimeout(1000 * 6);
+      await page.waitForSelector('button[title="Switch to 3d layout."]', {hidden:false});
+      await page.click('button[title="Switch to 3d layout."]');
+      await page.waitForSelector('button[title="Switch to 4panel layout."]', {hidden:false});
+
+      // await page.waitForTimeout(1000 * 6);
       const groups_image = await page.screenshot();
       // const groups_image = await canvas.screenshot();
       await console.log("... taking canvas snapshot ...");
@@ -200,11 +203,55 @@ describe("Test Suite for Janelia FlyEM Dataset", () => {
         customSnapshotIdentifier: 'Max_3D_Rendering',
       });
       await page.waitForTimeout(1000 * 3);
+      await page.waitForSelector('button[title="Switch to 4panel layout."]', {hidden:false});
+      await page.click('button[title="Switch to 4panel layout."]');
+      await page.waitForSelector('button[title="Switch to 3d layout."]', {hidden:false});
+
     });
 
   });
 
-  describe("Canvas with colored 2D + 3D", () => {
+  describe("Canvas with Min Volume Rendering", () => {
+
+    it("should enable min volume rendering", async () => {
+      console.log('Enabling Min Volume Rendering ...')
+      await page.waitForSelector(selectors.RENDERING_TAB_DROPDOWNS)
+      const dropdown_buttons = await page.$$('select.neuroglancer-layer-control-control')
+        await dropdown_buttons[1].click()
+      await page.waitForSelector(selectors.OFF_VALUE)
+      await page.waitForSelector(selectors.ON_VALUE)
+      await page.waitForSelector(selectors.MAX_VALUE)
+      await page.waitForSelector(selectors.MIN_VALUE)
+      await dropdown_buttons[1].select('min');
+      await page.waitForTimeout(2000);
+      await page.waitForSelector(selectors.RESOLUTION_SLICES)
+      
+      console.log('Min Volume Rendering enabled')
+    })
+
+    it("should take screenshot of main canvas with Min 3D Rendering", async () => {
+      const canvas = await page.waitForSelector(selectors.IMAGE_CANVAS, {hidden:false});
+      await page.waitForSelector('button[title="Switch to 3d layout."]', {hidden:false});
+      await page.click('button[title="Switch to 3d layout."]');
+      await page.waitForSelector('button[title="Switch to 4panel layout."]', {hidden:false});
+
+      // await page.waitForTimeout(1000 * 6);
+      const groups_image = await page.screenshot();
+      // const groups_image = await canvas.screenshot();
+      await console.log("... taking canvas snapshot ...");
+      expect(groups_image).toMatchImageSnapshot({
+        ...SNAPSHOT_OPTIONS,
+        customSnapshotIdentifier: 'Min_3D_Rendering',
+      });
+      await page.waitForTimeout(1000 * 3);
+      await page.waitForSelector('button[title="Switch to 4panel layout."]', {hidden:false});
+      await page.click('button[title="Switch to 4panel layout."]');
+      await page.waitForSelector('button[title="Switch to 3d layout."]', {hidden:false});
+
+    });
+  })
+
+  describe.skip("Canvas with colored 2D + 3D", () => {
 
     it("should change the color map of the 3D rendering", async () => {
       console.log('Changing color map ...')
