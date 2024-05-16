@@ -46,7 +46,7 @@ def add_image_layer(state, **kwargs):
         volume_rendering_mode="on",
         volume_rendering_depth_samples=200,
         tool_bindings={
-            "A": neuroglancer.VolumeRenderingModeTool(),
+            "A": neuroglancer.VolumeRenderingTool(),
             "B": neuroglancer.VolumeRenderingDepthSamplesTool(),
         },
         panels=[add_render_panel()],
