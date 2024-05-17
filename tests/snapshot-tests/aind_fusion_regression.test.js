@@ -199,7 +199,7 @@ describe("Test Suite for AIND Fusion Dataset", () => {
 
             return { valueBeforeSlash, valueAfterSlash };
           });
-          return valueBeforeSlash >= (1 / 4) * valueAfterSlash;
+          return valueBeforeSlash >= (1 / 2) * valueAfterSlash;
         };
 
         const maxRetries = 50;
@@ -282,7 +282,7 @@ describe("Test Suite for AIND Fusion Dataset", () => {
             
             return { valueBeforeSlash, valueAfterSlash };
           });
-          return valueBeforeSlash >= (1 / 4) * valueAfterSlash;
+          return valueBeforeSlash >= (1 / 2) * valueAfterSlash;
         };
 
         const maxRetries = 50;
