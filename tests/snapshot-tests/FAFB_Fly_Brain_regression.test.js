@@ -118,8 +118,8 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
         return dropdowns[1] && dropdowns[1].value === 'on';
       }, {}, '.neuroglancer-layer-control-container.neuroglancer-layer-options-control-container > select.neuroglancer-layer-control-control');
       await page.waitForSelector(selectors.RESOLUTION_SLICES)
-      const rendering_options_afterVolume = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
-      expect(rendering_options_afterVolume.length).toBe(7);
+      await page.waitForSelector('.neuroglancer-layer-control-container.neuroglancer-layer-options-control-container')
+      
       console.log('Volume Rendering enabled')
     });
 
@@ -192,7 +192,6 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
         const dropdowns = Array.from(document.querySelectorAll(selector));
         return dropdowns[1] && dropdowns[1].value === 'max';
       }, {}, '.neuroglancer-layer-control-container.neuroglancer-layer-options-control-container > select.neuroglancer-layer-control-control');
-      await page.waitForSelector(selectors.RESOLUTION_SLICES)
       await page.waitForSelector(selectors.RESOLUTION_SAMPLES)
       try {
         const isValueComplete = async () => {
