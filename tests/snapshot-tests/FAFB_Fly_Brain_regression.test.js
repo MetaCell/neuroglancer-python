@@ -9,7 +9,7 @@ import * as selectors from "./selectors.js";
 import { THRESHOLD, URL_START, TIMEOUT } from "./constants.js";
 
 //PAGE INFO:
-const baseURL = process.env.url || `${URL_START}#!%7B%22dimensions%22:%7B%22x%22:%5B8e-9%2C%22m%22%5D%2C%22y%22:%5B8e-9%2C%22m%22%5D%2C%22z%22:%5B4e-8%2C%22m%22%5D%7D%2C%22position%22:%5B62208.5%2C33536.5%2C3531.5%5D%2C%22crossSectionScale%22:1%2C%22projectionScale%22:131072%2C%22layers%22:%5B%7B%22type%22:%22image%22%2C%22source%22:%22precomputed://gs://neuroglancer-fafb-data/fafb_v14/fafb_v14_clahe%22%2C%22tab%22:%22source%22%2C%22shaderControls%22:%7B%22colormap%22:%7B%22controlPoints%22:%5B%7B%22position%22:204%2C%22color%22:%7B%220%22:0%2C%221%22:0%2C%222%22:0%2C%223%22:0%7D%7D%2C%7B%22position%22:358%2C%22color%22:%7B%220%22:255%2C%221%22:255%2C%222%22:255%2C%223%22:255%7D%7D%5D%7D%7D%2C%22name%22:%22fafb_v14_clahe%22%7D%5D%2C%22selectedLayer%22:%7B%22visible%22:true%2C%22layer%22:%22fafb_v14_clahe%22%7D%2C%22layout%22:%224panel%22%7D`;
+const baseURL = process.env.url || `${URL_START}#!%7B"dimensions":%7B"x":%5B8e-9%2C"m"%5D%2C"y":%5B8e-9%2C"m"%5D%2C"z":%5B4e-8%2C"m"%5D%7D%2C"position":%5B62208.5%2C33536.5%2C3531.5%5D%2C"crossSectionScale":1%2C"projectionScale":131072%2C"layers":%5B%7B"type":"image"%2C"source":"precomputed://gs://neuroglancer-fafb-data/fafb_v14/fafb_v14_clahe"%2C"tab":"source"%2C"shader":"#uicontrol%20invlerp%20normalized%28range=%5B0%2C200%5D%29%5Cn#uicontrol%20transferFunction%20colormap%28window=%5B0%2C200%5D%29%5Cn%20%20void%20main%28%29%20%7B%5Cn%20%20if%20%28%21VOLUME_RENDERING%29%7B%5Cn%20%20%5CtemitGrayscale%28normalized%28%29%29%3B%5Cn%20%20%7D%5Cn%20%20else%7B%5Cn%20%20%20%20emitRGBA%28colormap%28%29%29%3B%5Cn%20%20%7D%5Cn%7D%5Cn"%2C"name":"fafb_v14_clahe"%7D%5D%2C"selectedLayer":%7B"visible":true%2C"layer":"fafb_v14_clahe"%7D%2C"layout":"4panel"%7D`;
 
 
 //SNAPSHOT:
@@ -48,7 +48,7 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
       await page.waitForTimeout(1000);
       await page.waitForSelector(selectors.RENDERING_TAB_CONTROLS)
       const rendering_options = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
-      expect(rendering_options.length).toBe(5);
+      expect(rendering_options.length).toBe(6);
       console.log('Tab reached')
     })
 
@@ -336,7 +336,7 @@ describe("Test Suite for FAFB Adult Fly Brain Dataset", () => {
     })
   })
 
-  describe.skip("Canvas with colored 2D + 3D", () => {
+  describe("Canvas with colored 2D + 3D", () => {
 
     it("should change the color map of the 3D rendering", async () => {
       console.log('Changing color map ...')

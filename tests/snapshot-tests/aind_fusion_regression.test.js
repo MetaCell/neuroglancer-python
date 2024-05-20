@@ -8,7 +8,7 @@ import * as selectors from "./selectors.js";
 import { URL_START, THRESHOLD, TIMEOUT } from "./constants.js";
 
 //PAGE INFO:
-const baseURL = process.env.url || `${URL_START}#!%7B"dimensions":%7B"x":%5B7.48e-7%2C"m"%5D%2C"y":%5B7.48e-7%2C"m"%5D%2C"z":%5B0.000001%2C"m"%5D%2C"t":%5B0.001%2C"s"%5D%7D%2C"position":%5B29725.693359375%2C17808.77734375%2C11941.41796875%2C0%5D%2C"crossSectionScale":36.59823444367803%2C"projectionOrientation":%5B-0.13906417787075043%2C0.09761909395456314%2C0.22333434224128723%2C0.959819495677948%5D%2C"projectionScale":17983.459691529064%2C"projectionDepth":-0.7497788410238861%2C"layers":%5B%7B"type":"image"%2C"source":"zarr://s3://aind-open-data/exaSPIM_653980_2023-08-10_20-08-29_fusion_2023-08-24/fused.zarr/"%2C"localDimensions":%7B"c%27":%5B1%2C""%5D%7D%2C"localPosition":%5B0%5D%2C"tab":"source"%2C"shader":"#uicontrol%20invlerp%20normalized%28range=%5B0%2C200%5D%29%5Cnvoid%20main%28%29%20%7B%5Cn%20%20emitGrayscale%28normalized%28%29%29%3B%5Cn%7D%5Cn"%2C"shaderControls":%7B"normalized":%7B"range":%5B67%2C201%5D%7D%7D%2C"crossSectionRenderScale":0.47527330239775784%2C"volumeRenderingDepthSamples":844.412726025728%2C"name":"fused.zarr"%7D%5D%2C"showSlices":false%2C"selectedLayer":%7B"visible":true%2C"layer":"fused.zarr"%7D%2C"layout":"4panel"%7D`;
+const baseURL = process.env.url || `${URL_START}#!%7B"dimensions":%7B"x":%5B7.48e-7%2C"m"%5D%2C"y":%5B7.48e-7%2C"m"%5D%2C"z":%5B0.000001%2C"m"%5D%2C"t":%5B0.001%2C"s"%5D%7D%2C"position":%5B29725.693359375%2C17808.77734375%2C11941.41796875%2C0%5D%2C"crossSectionScale":36.59823444367803%2C"projectionOrientation":%5B-0.13906417787075043%2C0.09761909395456314%2C0.22333434224128723%2C0.959819495677948%5D%2C"projectionScale":17983.459691529064%2C"projectionDepth":-0.7497788410238861%2C"layers":%5B%7B"type":"image"%2C"source":"zarr://s3://aind-open-data/exaSPIM_653980_2023-08-10_20-08-29_fusion_2023-08-24/fused.zarr/"%2C"localDimensions":%7B"c%27":%5B1%2C""%5D%7D%2C"localPosition":%5B0%5D%2C"tab":"source"%2C"shader":"#uicontrol%20invlerp%20normalized%28range=%5B0%2C200%5D%29%5Cn#uicontrol%20transferFunction%20colormap%28window=%5B0%2C200%5D%29%5Cn%20%20void%20main%28%29%20%7B%5Cn%20%20if%20%28%21VOLUME_RENDERING%29%7B%5Cn%20%20%5CtemitGrayscale%28normalized%28%29%29%3B%5Cn%20%20%7D%5Cn%20%20else%7B%5Cn%20%20%20%20emitRGBA%28colormap%28%29%29%3B%5Cn%20%20%7D%5Cn%7D%5Cn"%2C"shaderControls":%7B"normalized":%7B"range":%5B67%2C201%5D%7D%7D%2C"crossSectionRenderScale":0.47527330239775784%2C"volumeRenderingDepthSamples":844.412726025728%2C"name":"fused.zarr"%7D%5D%2C"showSlices":false%2C"selectedLayer":%7B"visible":true%2C"layer":"fused.zarr"%7D%2C"layout":"4panel"%7D`;
 
 
 //SNAPSHOT:
@@ -16,7 +16,7 @@ const SNAPSHOT_OPTIONS = {
   customSnapshotsDir: `./snapshot-tests/snapshots/${scriptName}`,
   comparisonMethod: "ssim",
   failureThresholdType: "percent",
-  failureThreshold: THRESHOLD,
+  failureThreshold: 0.25,
 };
 
 
@@ -46,7 +46,7 @@ describe("Test Suite for AIND Fusion Dataset", () => {
       await page.waitForTimeout(1000);
       await page.waitForSelector(selectors.RENDERING_TAB_CONTROLS, { hidden: false })
       const rendering_options = await page.$$(".neuroglancer-layer-control-container.neuroglancer-layer-options-control-container");
-      expect(rendering_options.length).toBe(5);
+      expect(rendering_options.length).toBe(6);
       console.log('Tab reached')
     })
 
@@ -210,7 +210,7 @@ describe("Test Suite for AIND Fusion Dataset", () => {
             console.log('Value is reached. Continuing with the next steps.');
             break;
           }
-          await page.waitForTimeout(4000);
+          await page.waitForTimeout(3000);
           retries++;
         }
 
@@ -293,7 +293,7 @@ describe("Test Suite for AIND Fusion Dataset", () => {
             console.log('Value is reached. Continuing with the next steps.');
             break;
           }
-          await page.waitForTimeout(4000); 
+          await page.waitForTimeout(3000); 
           retries++;
         }
     
@@ -337,7 +337,7 @@ describe("Test Suite for AIND Fusion Dataset", () => {
     })
   })
 
-  describe.skip("Canvas with colored 2D + 3D", () => {
+  describe("Canvas with colored 2D + 3D", () => {
 
     it("should change the color map of the 3D rendering", async () => {
       console.log('Changing color map ...')
