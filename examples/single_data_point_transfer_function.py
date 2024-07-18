@@ -26,7 +26,7 @@ void main() {
         },
         "colormap": {
             "controlPoints": [[0, "#000000", 0.0], [84, "#ffffff", 1.0]],
-            "window": [0, 100],
+            "window": [0, 50],
             "channel": [],
             "defaultColor": "#ff00ff",
         },
@@ -41,7 +41,7 @@ void main() {
             layer=neuroglancer.ImageLayer(
                 source=neuroglancer.LocalVolume(
                     dimensions=s.dimensions,
-                    data=np.full(shape=(1, 1), dtype=np.uint32, fill_value=42),
+                    data=np.full(shape=(1, 1), dtype=np.uint64, fill_value=63),
                 ),
                 panels=[add_render_panel()],
             ),

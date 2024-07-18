@@ -47,6 +47,8 @@ def make_cordinate_space(state):
         scales=[748, 748, 1, 1],
     )
     state.dimensions = co_ords
+    state.enable_adaptive_downsampling = False
+    state.wireFrame = True
 
 
 if __name__ == "__main__":
