@@ -21,14 +21,14 @@ def create_mc_logo(output_path="file://datasets/mc_logo"):
     for i in range(dim_size):
         rawdata[:, :, i] = imgdata
 
-    # CloudVolume.from_numpy(
-    #     rawdata,
-    #     vol_path=output_path,
-    #     resolution=(1, 1, 1),
-    #     layer_type="image",
-    #     progress=True,
-    #     compress=False,
-    # )
+    CloudVolume.from_numpy(
+        rawdata,
+        vol_path=output_path,
+        resolution=(1, 1, 1),
+        layer_type="image",
+        progress=True,
+        compress=False,
+    )
     return rawdata
 
 
