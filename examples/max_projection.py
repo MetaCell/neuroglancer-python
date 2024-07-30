@@ -26,7 +26,7 @@ def add_image_layer(state):
     )
     local_volume = neuroglancer.LocalVolume(create_volume(), dimensions)
     state.layers["image"] = neuroglancer.ImageLayer(
-        source=local_volume, volume_rendering_mode="MAX", shader=get_shader()
+        source=local_volume, volume_rendering_mode="max", shader=get_shader()
     )
     state.layout = "3d"
     state.show_axis_lines = False
