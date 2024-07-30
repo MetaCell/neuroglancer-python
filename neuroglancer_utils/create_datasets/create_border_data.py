@@ -2,13 +2,10 @@ from cloudvolume import CloudVolume
 import numpy as np
 
 
-def create_cdf_example(output_path="file://datasets/cdf"):
+def create_border_example(output_path="file://datasets/border"):
     shape = (40,) * 3
     data = np.zeros(shape=shape, dtype=np.uint8)
-    data[:10] = 0
-    data[10:20] = 1
-    data[20:30] = 2
-    data[30:] = 3
+    data[4:36, 4:36, 4:36] = 10
     CloudVolume.from_numpy(
         data,
         vol_path=output_path,
