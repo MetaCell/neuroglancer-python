@@ -7,6 +7,6 @@ from neuroglancer_utils.local_server import create_server
 create_cube()
 create_sphere()
 create_allen_multi()
-create_server(directory="datasets")
 create_cdf_example()
+create_server(directory="datasets")
 input("Press enter to continue")
