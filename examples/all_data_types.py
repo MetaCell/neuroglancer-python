@@ -58,7 +58,7 @@ def add_image_layer(state, dtype, **kwargs):
 
 def get_shader():
     return """
-#uicontrol transferFunction colormap(window=[0,120])
+#uicontrol transferFunction colormap
 void main() {
     emitRGBA(colormap());
     }

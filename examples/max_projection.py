@@ -60,4 +60,5 @@ if __name__ == "__main__":
     print("shot 1 taken")
 
     with open("p1.png", "wb") as f:
+        print(s1.screenshot.resolution_metadata)
         f.write(s1.screenshot.image)

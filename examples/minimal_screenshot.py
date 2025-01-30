@@ -62,6 +62,7 @@ def main():
     with viewer.txn() as s:
         s.layers["image"].volume_rendering_gain = 10.0
     s2 = viewer.screenshot(size=[1000, 1000])
+    print(s2.screenshot.resolutionMetadata.panelResolutionData[0].type)
     print(viewer.state.layers["image"].volumeRenderingGain)
     print("shot 2 taken")
 
