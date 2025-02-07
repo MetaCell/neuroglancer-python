@@ -16,7 +16,7 @@ pip install .
 
 ## Usage
 
-See [examples](examples) folder.
+See [examples](examples) folder. There is also a makefile that can be used by running `make all` to generate example data, run the server, and open the browser. You need to modify the variables in the makefile to point to the correct paths.
 
 ## Note
 
