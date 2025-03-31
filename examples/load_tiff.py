@@ -1,111 +1,137 @@
-import argparse
+# %% Import packages
+
 import itertools
-import webbrowser
-import neuroglancer
-import neuroglancer.cli
 from pathlib import Path
 from bfio import BioReader
-import dask
-import dask.array
 import numpy as np
+from cloudvolume import CloudVolume
+from cloudvolume.lib import touch
+import json
+
+# %% Define the path to the files
 
 HERE = Path(__file__).parent
 
-FILEPATH = Path("x.ome.tiff")
+FILEPATH = Path(
+    "/media/starfish/Storage/metacell/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched.ome.tiff"
+)
+OUTPUT_PATH = Path(
+    "/media/starfish/Storage/metacell/converted/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched"
+)
+OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
+
+# %% Load the data
+br = BioReader(str(FILEPATH), backend="bioformats")
+
+# %% Inspect the data
+with open(OUTPUT_PATH / "metadata.txt", "w") as f:
+    json.dump(br.metadata.model_dump_json(), f)
+    f.write(br.metadata.model_dump_json())
+print(br.shape)
+
+# %% Extract from the data - units are in nm
+size_x = br.metadata.images[0].pixels.physical_size_x
+if size_x is None:
+    size_x = 1
+size_y = br.metadata.images[0].pixels.physical_size_y
+if size_y is None:
+    size_y = 1
+size_z = br.metadata.images[0].pixels.physical_size_z
+if size_z is None:
+    size_z = 1
+x_unit = br.metadata.images[0].pixels.physical_size_x_unit
+y_unit = br.metadata.images[0].pixels.physical_size_y_unit
+z_unit = br.metadata.images[0].pixels.physical_size_z_unit
+
+# if the the units are um, convert to nm
+if str(x_unit) == "UnitsLength.MICROMETER":
+    size_x *= 1000
+if str(y_unit) == "UnitsLength.MICROMETER":
+    size_y *= 1000
+if str(z_unit) == "UnitsLength.MICROMETER":
+    size_z *= 1000
+
+num_channels = br.shape[-1]
+data_type = "uint16"
+chunk_size = [256, 256, 128, 1]
+
+# %% Setup the cloudvolume info
+info = CloudVolume.create_new_info(
+    num_channels=num_channels,
+    layer_type="image",
+    data_type=data_type,
+    encoding="raw",
+    resolution=[size_x, size_y, size_z],
+    voxel_offset=[0, 0, 0],
+    chunk_size=chunk_size[:-1],
+    volume_size=[br.shape[0], br.shape[1], br.shape[2]],
+)
+vol = CloudVolume("file://" + str(OUTPUT_PATH), info=info)
+vol.provenance.description = "Example data conversion"
+vol.commit_info()
+vol.commit_provenance()
+
+# %% Setup somewhere to hold progress
+progress_dir = OUTPUT_PATH / "progress"
+progress_dir.mkdir(exist_ok=True)
 
 
-def add_image_layer(state, path, name="image"):
-    br = BioReader(str(path), backend="bioformats")
-    chunk_shape = np.array([256, 256, 128, 1])
-    shape = np.array(br.shape)
-    num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
-    padded_chunk_shape = num_chunks_per_dim * chunk_shape
+# %% Functions for moving data
+shape = np.array(br.shape)
+chunk_shape = np.array([1024, 1024, 512, 1])  # this is for reading data
+num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
-    def chunked_reader(x_i, y_i, z_i, c):
-        x_start, x_end = x_i * chunk_shape[0], min((x_i + 1) * chunk_shape[0], shape[0])
-        y_start, y_end = y_i * chunk_shape[1], min((y_i + 1) * chunk_shape[1], shape[1])
-        z_start, z_end = z_i * chunk_shape[2], min((z_i + 1) * chunk_shape[2], shape[2])
 
-        # Read the chunk from the BioReader
-        chunk = br.read(
-            X=(x_start, x_end), Y=(y_start, y_end), Z=(z_start, z_end), C=(c,)
-        )
-        # Extend the chunk to be X, Y, Z, 1 not just X, Y, Z
-        chunk = np.expand_dims(chunk, axis=-1)
-        # If the chunk is smaller than the padded chunk shape, pad it
-        if chunk.shape != tuple(chunk_shape[:3]):
-            padded_chunk = np.zeros(chunk_shape, dtype=chunk.dtype)
-            padded_chunk[: chunk.shape[0], : chunk.shape[1], : chunk.shape[2], :] = (
-                chunk
-            )
-            return padded_chunk
-        return chunk
+def chunked_reader(x_i, y_i, z_i, c):
+    x_start, x_end = x_i * chunk_shape[0], min((x_i + 1) * chunk_shape[0], shape[0])
+    y_start, y_end = y_i * chunk_shape[1], min((y_i + 1) * chunk_shape[1], shape[1])
+    z_start, z_end = z_i * chunk_shape[2], min((z_i + 1) * chunk_shape[2], shape[2])
 
-    def chunk_size(x_i, y_i, z_i, c):
-        x_start, x_end = x_i * chunk_shape[0], min((x_i + 1) * chunk_shape[0], shape[0])
-        y_start, y_end = y_i * chunk_shape[1], min((y_i + 1) * chunk_shape[1], shape[1])
-        z_start, z_end = z_i * chunk_shape[2], min((z_i + 1) * chunk_shape[2], shape[2])
+    # Read the chunk from the BioReader
+    chunk = br.read(X=(x_start, x_end), Y=(y_start, y_end), Z=(z_start, z_end), C=(c,))
+    return np.expand_dims(chunk, axis=-1)
 
-        return (x_end - x_start, y_end - y_start, z_end - z_start, 1)
 
-    lazy_reader = dask.delayed(chunked_reader)
-    lazy_chunks = [
-        lazy_reader(x, y, z, c)
-        for x, y, z, c in itertools.product(*[range(i) for i in num_chunks_per_dim])
+def process(args):
+    x_i, y_i, z_i, c = args
+    rawdata = chunk = chunked_reader(x_i, y_i, z_i, c)
+    start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
+    end = [
+        min((x_i + 1) * chunk_shape[0], shape[0]),
+        min((y_i + 1) * chunk_shape[1], shape[1]),
+        min((z_i + 1) * chunk_shape[2], shape[2]),
     ]
-    # chunk_sizes = [
-    #     chunk_size(x, y, z, c)
-    #     for x, y, z, c in itertools.product(*[range(i) for i in num_chunks_per_dim])
-    # ]
-    sample = lazy_chunks[
-        0
-    ].compute()  # load the first chunk (assume rest are same shape/dtype)
-    arrays = [
-        dask.array.from_delayed(lazy_chunk, dtype=sample.dtype, shape=sample.shape)
-        for lazy_chunk in lazy_chunks
-    ]
-    x = dask.array.concatenate(arrays)
-    print(x.shape, shape, np.prod(x.shape), np.prod(padded_chunk_shape))
-    # We need to reshape in iterations, 
-    # x.reshape(padded_chunk_shape)
-    scales = [1, 1, 1, 1]
-    dimensions = neuroglancer.CoordinateSpace(
-        names=["x", "y", "z", "c"], units="um", scales=scales
+    vol[start[0] : end[0], start[1] : end[1], start[2] : end[2], c] = rawdata
+    touch(
+        progress_dir
+        / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}_{start[2]}-{end[2]}_{c}.done"
     )
-    local_volume = neuroglancer.LocalVolume(x, dimensions)
-    state.layers.append(
-        name=name,
-        layer=neuroglancer.ImageLayer(
-            source=local_volume,
-            volume_rendering_mode="ON",
-            volume_rendering_depth_samples=400,
-        ),
-        shader="""
-#uicontrol invlerp normalized
-void main() {
-    float val = normalized();
-    emitRGBA(vec4(val, val, val, val));
-    }
-    """,
-    )
-    state.layout = "3d"
 
 
-def launch_nglancer():
-    ap = argparse.ArgumentParser()
-    neuroglancer.cli.add_server_arguments(ap)
-    args = ap.parse_args()
-    neuroglancer.cli.handle_server_arguments(args)
-    viewer = neuroglancer.Viewer()
-    return viewer
+# %% Try with a single chunk to see if it works
+# x_i, y_i, z_i = 0, 0, 0
+# process((x_i, y_i, z_i, 0))
 
+# %% Can't figure out the writing so do it with fake data
+# fake_data = np.random.randint(0, 2**16, size=chunk_size, dtype=np.uint16)
+# vol[0:256, 0:256, 0:128, 0] = fake_data
 
-def main():
-    viewer = launch_nglancer()
-    with viewer.txn() as s:
-        add_image_layer(s, FILEPATH, "image")
-    webbrowser.open_new(viewer.get_viewer_url())
+coords = itertools.product(
+    range(num_chunks_per_dim[0]),
+    range(num_chunks_per_dim[1]),
+    range(num_chunks_per_dim[2]),
+    range(num_channels),
+)
 
+# %% Move the data across with multiple workers
+# max_workers = 8
 
-if __name__ == "__main__":
-    main()
+# with ProcessPoolExecutor(max_workers=max_workers) as executor:
+#     executor.map(process, coords)
+
+# %% Move the data across with a single worker
+for coord in coords:
+    process(coord)
+
+# %% Serve the dataset to be used in neuroglancer
+vol.viewer(port=1337)
