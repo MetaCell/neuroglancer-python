@@ -1,12 +1,14 @@
 # %% Import packages
 
 import itertools
+import math
 from pathlib import Path
 from bfio import BioReader
 import numpy as np
 from cloudvolume import CloudVolume
-from cloudvolume.lib import touch
+from cloudvolume.lib import touch, Vec
 import json
+from neuroglancer.downsample import downsample_with_averaging
 
 # %% Define the path to the files
 
@@ -54,8 +56,8 @@ if str(z_unit) == "UnitsLength.MICROMETER":
 
 num_channels = br.shape[-1]
 data_type = "uint16"
-chunk_size = [256, 256, 128, 1]
-volume_size = [br.shape[1], br.shape[0], br.shape[2]] # XYZ
+chunk_size = [256, 256, 128]
+volume_size = [br.shape[1], br.shape[0], br.shape[2]]  # XYZ
 
 # %% Setup the cloudvolume info
 info = CloudVolume.create_new_info(
@@ -65,13 +67,15 @@ info = CloudVolume.create_new_info(
     encoding="raw",
     resolution=[size_x, size_y, size_z],
     voxel_offset=[0, 0, 0],
-    chunk_size=chunk_size[:-1],
+    chunk_size=chunk_size,
     volume_size=volume_size,
+    max_mip=2,
+    factor=Vec(2, 2, 2),
 )
-vol = CloudVolume("file://" + str(OUTPUT_PATH), info=info)
-vol.provenance.description = "Example data conversion"
-vol.commit_info()
-vol.commit_provenance()
+vols = [CloudVolume("file://" + str(OUTPUT_PATH), mip=i) for i in range(3)]
+vols[0].provenance.description = "Example data conversion"
+vols[0].commit_info()
+vols[0].commit_provenance()
 
 # %% Setup somewhere to hold progress
 progress_dir = OUTPUT_PATH / "progress"
@@ -79,29 +83,25 @@ progress_dir.mkdir(exist_ok=True)
 
 
 # %% Functions for moving data
-shape = np.array([br.shape[1], br.shape[0], br.shape[2], br.shape[3]])
-chunk_shape = np.array([1024, 1024, 512, 1])  # this is for reading data
+shape = np.array([br.shape[1], br.shape[0], br.shape[2]])
+chunk_shape = np.array([1024, 1024, 512])  # this is for reading data
 num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
 
-def chunked_reader(x_i, y_i, z_i, c):
+def chunked_reader(x_i, y_i, z_i):
     x_start, x_end = x_i * chunk_shape[0], min((x_i + 1) * chunk_shape[0], shape[0])
     y_start, y_end = y_i * chunk_shape[1], min((y_i + 1) * chunk_shape[1], shape[1])
     z_start, z_end = z_i * chunk_shape[2], min((z_i + 1) * chunk_shape[2], shape[2])
 
     # Read the chunk from the BioReader
-    chunk = br.read(
-        X=(x_start, x_end), Y=(y_start, y_end), Z=(z_start, z_end), C=(c,)
-    )
-    # Keep expanding dims until it is the same length as chunk_shape
-    while len(chunk.shape) < len(chunk_shape):
-        chunk = np.expand_dims(chunk, axis=-1)
+    chunk = br.read(X=(x_start, x_end), Y=(y_start, y_end), Z=(z_start, z_end))
+
     # Return the chunk
     return chunk.swapaxes(0, 1)
 
 
 def process(args):
-    x_i, y_i, z_i, c = args
+    x_i, y_i, z_i = args
     start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
     end = [
         min((x_i + 1) * chunk_shape[0], shape[0]),
@@ -110,29 +110,41 @@ def process(args):
     ]
     f_name = (
         progress_dir
-        / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}_{start[2]}-{end[2]}_{c}.done"
+        / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}_{start[2]}-{end[2]}.done"
     )
     if f_name.exists() and not OVERWRITE:
         return
     print("Working on", f_name)
-    rawdata = chunk = chunked_reader(x_i, y_i, z_i, c)
-    vol[start[0] : end[0], start[1] : end[1], start[2] : end[2], c] = rawdata
+    rawdata = chunked_reader(x_i, y_i, z_i)
+    print(rawdata.shape)
+    for mip_level in reversed(range(3)):
+        if mip_level == 0:
+            downsampled = rawdata
+            ds_start = start
+            ds_end = end
+        else:
+            downsampled = downsample_with_averaging(
+                rawdata, [2 * mip_level, 2 * mip_level, 2 * mip_level, 1]
+            )
+            ds_start = [int(math.ceil(s / (2 * mip_level))) for s in start]
+            ds_end = [int(math.ceil(e / (2 * mip_level))) for e in end]
+
+        vols[mip_level][
+            ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
+        ] = downsampled
     touch(f_name)
 
 
 # %% Try with a single chunk to see if it works
 # x_i, y_i, z_i = 0, 0, 0
-# process((x_i, y_i, z_i, 0))
+# process((x_i, y_i, z_i))
 
-# %% Can't figure out the writing so do it with fake data
-# fake_data = np.random.randint(0, 2**16, size=chunk_size, dtype=np.uint16)
-# vol[0:256, 0:256, 0:128, 0] = fake_data
+# %% Loop over all the chunks
 
 coords = itertools.product(
     range(num_chunks_per_dim[0]),
     range(num_chunks_per_dim[1]),
     range(num_chunks_per_dim[2]),
-    range(num_channels),
 )
 # Do it in reverse order because the last chunks are most likely to error
 reversed_coords = list(coords)
@@ -149,4 +161,6 @@ for coord in reversed_coords:
     process(coord)
 
 # %% Serve the dataset to be used in neuroglancer
-vol.viewer(port=1337)
+vols[0].viewer(port=1337)
+
+# %%
