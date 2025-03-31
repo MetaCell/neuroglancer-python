@@ -19,6 +19,7 @@ OUTPUT_PATH = Path(
     "/media/starfish/Storage/metacell/converted/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched"
 )
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
+OVERWRITE = False
 
 # %% Load the data
 br = BioReader(str(FILEPATH), backend="bioformats")
@@ -54,6 +55,7 @@ if str(z_unit) == "UnitsLength.MICROMETER":
 num_channels = br.shape[-1]
 data_type = "uint16"
 chunk_size = [256, 256, 128, 1]
+volume_size = [br.shape[1], br.shape[0], br.shape[2]] # XYZ
 
 # %% Setup the cloudvolume info
 info = CloudVolume.create_new_info(
@@ -64,7 +66,7 @@ info = CloudVolume.create_new_info(
     resolution=[size_x, size_y, size_z],
     voxel_offset=[0, 0, 0],
     chunk_size=chunk_size[:-1],
-    volume_size=[br.shape[0], br.shape[1], br.shape[2]],
+    volume_size=volume_size,
 )
 vol = CloudVolume("file://" + str(OUTPUT_PATH), info=info)
 vol.provenance.description = "Example data conversion"
@@ -77,7 +79,7 @@ progress_dir.mkdir(exist_ok=True)
 
 
 # %% Functions for moving data
-shape = np.array(br.shape)
+shape = np.array([br.shape[1], br.shape[0], br.shape[2], br.shape[3]])
 chunk_shape = np.array([1024, 1024, 512, 1])  # this is for reading data
 num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
@@ -88,24 +90,34 @@ def chunked_reader(x_i, y_i, z_i, c):
     z_start, z_end = z_i * chunk_shape[2], min((z_i + 1) * chunk_shape[2], shape[2])
 
     # Read the chunk from the BioReader
-    chunk = br.read(X=(x_start, x_end), Y=(y_start, y_end), Z=(z_start, z_end), C=(c,))
-    return np.expand_dims(chunk, axis=-1)
+    chunk = br.read(
+        X=(x_start, x_end), Y=(y_start, y_end), Z=(z_start, z_end), C=(c,)
+    )
+    # Keep expanding dims until it is the same length as chunk_shape
+    while len(chunk.shape) < len(chunk_shape):
+        chunk = np.expand_dims(chunk, axis=-1)
+    # Return the chunk
+    return chunk.swapaxes(0, 1)
 
 
 def process(args):
     x_i, y_i, z_i, c = args
-    rawdata = chunk = chunked_reader(x_i, y_i, z_i, c)
     start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
     end = [
         min((x_i + 1) * chunk_shape[0], shape[0]),
         min((y_i + 1) * chunk_shape[1], shape[1]),
         min((z_i + 1) * chunk_shape[2], shape[2]),
     ]
-    vol[start[0] : end[0], start[1] : end[1], start[2] : end[2], c] = rawdata
-    touch(
+    f_name = (
         progress_dir
         / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}_{start[2]}-{end[2]}_{c}.done"
     )
+    if f_name.exists() and not OVERWRITE:
+        return
+    print("Working on", f_name)
+    rawdata = chunk = chunked_reader(x_i, y_i, z_i, c)
+    vol[start[0] : end[0], start[1] : end[1], start[2] : end[2], c] = rawdata
+    touch(f_name)
 
 
 # %% Try with a single chunk to see if it works
@@ -122,6 +134,9 @@ coords = itertools.product(
     range(num_chunks_per_dim[2]),
     range(num_channels),
 )
+# Do it in reverse order because the last chunks are most likely to error
+reversed_coords = list(coords)
+reversed_coords.reverse()
 
 # %% Move the data across with multiple workers
 # max_workers = 8
@@ -130,7 +145,7 @@ coords = itertools.product(
 #     executor.map(process, coords)
 
 # %% Move the data across with a single worker
-for coord in coords:
+for coord in reversed_coords:
     process(coord)
 
 # %% Serve the dataset to be used in neuroglancer
