@@ -18,7 +18,7 @@ FILEPATH = Path(
     "/media/starfish/Storage/metacell/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched.ome.tiff"
 )
 OUTPUT_PATH = Path(
-    "/media/starfish/Storage/metacell/converted/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched"
+    "/media/starfish/Storage/metacell/converted/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched-raw"
 )
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 OVERWRITE = False
@@ -72,11 +72,19 @@ info = CloudVolume.create_new_info(
     max_mip=2,
     factor=Vec(2, 2, 2),
 )
-vols = [CloudVolume("file://" + str(OUTPUT_PATH), mip=i) for i in range(3)]
-vols[0].provenance.description = "Example data conversion"
-vols[0].commit_info()
-vols[0].commit_provenance()
+vol = CloudVolume(
+    "file://" + str(OUTPUT_PATH),
+    info=info,
+    mip=0,
+)
+vol.commit_info()
+vol.provenance.description = "Example data conversion"
+vol.commit_provenance()
+del vol
 
+vols = [
+    CloudVolume("file://" + str(OUTPUT_PATH), mip=i, compress=False) for i in range(3)
+]
 # %% Setup somewhere to hold progress
 progress_dir = OUTPUT_PATH / "progress"
 progress_dir.mkdir(exist_ok=True)
