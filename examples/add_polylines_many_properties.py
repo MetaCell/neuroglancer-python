@@ -9,6 +9,19 @@ if __name__ == "__main__":
     args = ap.parse_args()
     neuroglancer.cli.handle_server_arguments(args)
     viewer = neuroglancer.Viewer()
+    # Make lot of properties to test the performance
+    lots_of_properties = [
+        neuroglancer.AnnotationPropertySpec(
+            id=f"random_{t}",
+            type="float32",
+            default=10,
+        )
+        for t in range(300)
+    ]
+
+    def random_values(i):
+        return [i * t for t in range(300)]
+
     with viewer.txn() as s:
         s.dimensions = neuroglancer.CoordinateSpace(
             names=["x", "y"], units="nm", scales=[1, 1]
@@ -39,22 +52,25 @@ if __name__ == "__main__":
                         type="uint8",
                         default=10,
                     ),
+                    *lots_of_properties,
                 ],
                 annotations=[
                     neuroglancer.PolyLineAnnotation(
                         id="1",
                         points=[[150, 150], [200, 100], [30, 40]],
-                        props=["#0f0", 5, 6, 7],
+                        props=["#0f0", 5, 6, 7, *random_values(1)],
                     ),
                     neuroglancer.PolyLineAnnotation(
                         id="2",
-                        points=[[250, 100], [20, 20]],
-                        props=["#ff0", 30, 7, 9],
-                    ),
-                    neuroglancer.PolyLineAnnotation(
-                        id="4",
-                        points=[[250, 100], [20, 20], [10, 10], [1, 2]],
-                        props=["#fa0", 1, 7, 20],
+                        points=[
+                            [250, 100],
+                            [20, 20],
+                            [32, 42],
+                            [50, 60],
+                            [70, 80],
+                            [90, 100],
+                        ],
+                        props=["#ff0", 30, 7, 9, *random_values(2)],
                     ),
                 ],
                 shader="""
@@ -67,6 +83,5 @@ void main() {
         )
         s.layout = "xy"
         s.selected_layer.layer = "a"
-        s.layers["a"].tool = "annotatePolyline"
     print("Use `Control+right click` to display annotation details.")
     print(viewer)
