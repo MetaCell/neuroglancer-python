@@ -19,12 +19,8 @@ from cryoet_data_portal_neuroglancer.precompute.mesh import (
 
 HERE = Path(__file__).parent
 
-FILEPATH = Path(
-    "..."
-)
-OUTPUT_PATH = Path(
-    "..."
-)
+FILEPATH = Path("...")
+OUTPUT_PATH = Path("...")
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 OVERWRITE = False
 

@@ -14,12 +14,8 @@ from neuroglancer.downsample import downsample_with_averaging
 
 HERE = Path(__file__).parent
 
-FILEPATH = Path(
-    "/media/starfish/Storage/metacell/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched.ome.tiff"
-)
-OUTPUT_PATH = Path(
-    "/media/starfish/Storage/metacell/converted/Isl1-GFP_E13-5_F129-3_CMN-R-L_02052024-GLC-stitched-raw"
-)
+FILEPATH = Path("...")
+OUTPUT_PATH = Path(".../output")
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 OVERWRITE = False
 
