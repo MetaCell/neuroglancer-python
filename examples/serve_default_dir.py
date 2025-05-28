@@ -1,4 +1,5 @@
 from neuroglancer_utils.create_datasets.create_full_cube import create_cube
+from neuroglancer_utils.create_datasets.create_float_cube import create_float_cube
 from neuroglancer_utils.create_datasets.create_full_cube_16 import (
     create_cube as create_cube_16,
 )
@@ -10,6 +11,7 @@ from neuroglancer_utils.create_datasets.create_multic import create_multi
 from neuroglancer_utils.local_server import create_server
 
 create_cube()
+create_float_cube()
 create_cube_16()
 create_sphere()
 create_allen_multi()
