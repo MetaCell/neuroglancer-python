@@ -16,7 +16,7 @@ def create_gridded_config(
         if dim_name == "x" or dim_name == "y" or dim_name == "z":
             input_dimensions[i] = [nanometer, "m"]
         elif dim_name == "t":
-            input_dimensions[i] = [1, "s"]
+            input_dimensions[i] = [nanometer, "m"]
         elif dim_name == "c'":
             input_dimensions[i] = [1, ""]
 
