@@ -41,3 +41,9 @@ jest MATCH --config=jest.config.js
 ```
 
 where `MATCH` is a substring of the test name.
+
+### Running local server
+
+```
+npx http-server FOLDER_WITH_DATA/ --cors=authorization
+```
