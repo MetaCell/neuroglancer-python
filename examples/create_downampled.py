@@ -21,8 +21,8 @@ OUTPUT_PATH = Path("")
 # Other settings
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 OVERWRITE = False
-NUM_MIPS = 5
-MIP_CUTOFF = 4  # To save time you can start at the lowest resolution and work up
+NUM_MIPS = 3
+MIP_CUTOFF = 0  # To save time you can start at the lowest resolution and work up
 
 # %% Load the data
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
@@ -57,7 +57,6 @@ def load_chunk_from_zarr_store(
     ]
     # The original timestamp was 65535, can be filterd out
     data = np.where(data == 65535, 0, data)
-    print("Loaded data shape b4 sq:", data.shape)
     data = np.squeeze(data)  # Remove any singleton dimensions
     print("Loaded data shape:", data.shape)
     # Then we permute to XYTCZ
@@ -70,9 +69,7 @@ zarr_store = load_zarr_data(all_files[0])
 # It may take too long to just load one file, might need to process in chunks
 # %% Check how long to load a single file
 start_time = time.time()
-data = load_chunk_from_zarr_store(
-    zarr_store, 0, 256, 0, 256, 0, 128, channel=0
-)
+data = load_chunk_from_zarr_store(zarr_store, 0, 256, 0, 200, 0, 128, channel=0)
 print("Time to load a single file:", time.time() - start_time)
 
 # %% Inspect the data
@@ -90,8 +87,8 @@ data_type = "uint16"
 chunk_size = [256, 256, 128]
 
 # You can provide a subset here also
-num_rows = 16
-num_cols = 24
+num_rows = 1
+num_cols = 1
 volume_size = [
     single_file_dims_shape[0] * num_cols,
     single_file_dims_shape[1] * num_rows,
@@ -131,24 +128,29 @@ progress_dir = OUTPUT_PATH / "progress"
 progress_dir.mkdir(exist_ok=True)
 
 # %% Functions for moving data
-read_shape = single_file_dims_shape  # this is for reading data
+# TODO setup file loop
+# TODO setup channel handling
+
+shape = single_file_dims_shape
+chunk_shape = np.array([1500, 936, 687])  # this is for reading data
+num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
 
 def process(args):
-    x_i, y_i = args
-    start = [x_i * read_shape[0], y_i * read_shape[1], 0]
+    x_i, y_i, z_i = args
+    start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
     end = [
-        (x_i + 1) * read_shape[0],
-        (y_i + 1) * read_shape[1],
-        read_shape[2],
+        min((x_i + 1) * chunk_shape[0], shape[0]),
+        min((y_i + 1) * chunk_shape[1], shape[1]),
+        min((z_i + 1) * chunk_shape[2], shape[2]),
     ]
     f_name = progress_dir / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}.done"
+    print(f"Processing chunk: {start} to {end}, file: {f_name}")
     if f_name.exists() and not OVERWRITE:
         return
-    flat_index = x_i * num_cols + y_i
-    path = all_files[flat_index]
-    rawdata = load_zarr_and_permute(path)[1]
-    print("Working on", f_name)
+    rawdata = load_chunk_from_zarr_store(
+        zarr_store, start[0], end[0], start[1], end[1], start[2], end[2], channel=0
+    )
     for mip_level in reversed(range(MIP_CUTOFF, NUM_MIPS)):
         if mip_level == 0:
             downsampled = rawdata
@@ -156,10 +158,12 @@ def process(args):
             ds_end = end
         else:
             downsampled = downsample_with_averaging(
-                rawdata, [2 * mip_level, 2 * mip_level, 2 * mip_level, 1]
+                rawdata, [2 * mip_level, 2 * mip_level, 2 * mip_level]
             )
             ds_start = [int(math.ceil(s / (2 * mip_level))) for s in start]
             ds_end = [int(math.ceil(e / (2 * mip_level))) for e in end]
+            print(ds_start, ds_end)
+            print("Downsampled shape:", downsampled.shape)
 
         vols[mip_level][
             ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
@@ -168,12 +172,16 @@ def process(args):
 
 
 # %% Try with a single chunk to see if it works
-x_i, y_i = 0, 0
-process((x_i, y_i))
+x_i, y_i, z_i = 0, 0, 0
+process((x_i, y_i, z_i))
+
 
 # %% Loop over all the chunks
-
-coords = itertools.product(range(num_rows), range(num_cols))
+coords = itertools.product(
+    range(num_chunks_per_dim[0]),
+    range(num_chunks_per_dim[1]),
+    range(num_chunks_per_dim[2]),
+)
 # Do it in reverse order because the last chunks are most likely to error
 reversed_coords = list(coords)
 reversed_coords.reverse()
