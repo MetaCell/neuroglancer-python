@@ -23,6 +23,9 @@ OVERWRITE = False
 NUM_MIPS = 5
 MIP_CUTOFF = 3  # To save time you can start at the lowest resolution and work up
 NUM_CHANNELS = 2  # For less memory usage (can't be 1 right now though)
+NUM_ROWS = 3
+NUM_COLS = 6
+ALLOW_NON_ALIGNED_WRITE = True
 
 # %% Load the data
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
@@ -44,16 +47,14 @@ def load_zarr_and_permute(file_path):
     return zarr_store, data
 
 
-def load_chunk_from_zarr_store(
-    zarr_store, x_start, x_end, y_start, y_end, z_start, z_end
-):
+def load_data_from_zarr_store(zarr_store):
     # Input is in Z, T, C, Y, X order
     data = zarr_store[
         :,  # T
-        z_start:z_end,  # Z
+        :,  # Z
         :NUM_CHANNELS,  # C
-        y_start:y_end,  # Y
-        x_start:x_end,  # X
+        :,  # Y
+        :,  # X
     ]
     # The original timestamp was 65535, can be filterd out
     data = np.where(data == 65535, 0, data)
@@ -65,13 +66,6 @@ def load_chunk_from_zarr_store(
 
 
 zarr_store = load_zarr_data(all_files[0])
-
-# It may take too long to just load one file, might need to process in chunks
-# %% Check how long to load a single file
-# import time
-# start_time = time.time()
-# data = load_chunk_from_zarr_store(zarr_store, 0, 256, 0, 200, 0, 128)
-# print("Time to load a single file:", time.time() - start_time)
 
 # %% Inspect the data
 shape = zarr_store.shape
@@ -87,17 +81,15 @@ num_channels = min(shape[2], NUM_CHANNELS)  # Limit to NUM_CHANNELS for memory u
 data_type = "uint16"
 chunk_size = [64, 64, 32]
 
-# You can provide a subset here also
-num_rows = 1
-num_cols = 1
 volume_size = [
-    single_file_dims_shape[0] * num_cols,
-    single_file_dims_shape[1] * num_rows,
+    single_file_dims_shape[0] * NUM_ROWS,
+    single_file_dims_shape[1] * NUM_COLS,
     single_file_dims_shape[2],
 ]  # XYZ (T)
 print("Volume size:", volume_size)
 
 # %% Setup the cloudvolume info
+# TODO verify if non-axis aligned is ok or not
 info = CloudVolume.create_new_info(
     num_channels=num_channels,
     layer_type="image",
@@ -114,6 +106,8 @@ vol = CloudVolume(
     "file://" + str(OUTPUT_PATH),
     info=info,
     mip=0,
+    non_aligned_writes=ALLOW_NON_ALIGNED_WRITE,
+    fill_missing=True,
 )
 vol.commit_info()
 vol.provenance.description = "Example data conversion"
@@ -122,21 +116,27 @@ del vol
 
 # %% Create the volumes for each mip level and hold progress
 vols = [
-    CloudVolume("file://" + str(OUTPUT_PATH), mip=i, compress=False)
+    CloudVolume(
+        "file://" + str(OUTPUT_PATH),
+        mip=i,
+        compress=False,
+        non_aligned_writes=ALLOW_NON_ALIGNED_WRITE,
+        fill_missing=True,
+    )
     for i in range(NUM_MIPS)
 ]
 progress_dir = OUTPUT_PATH / "progress"
 progress_dir.mkdir(exist_ok=True)
 
 # %% Functions for moving data
-shape = single_file_dims_shape
+shape = volume_size
 chunk_shape = np.array([1500, 936, 687])  # this is for reading data
 num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
 
 def process(args):
     x_i, y_i, z_i = args
-    flat_index = x_i * num_cols + y_i
+    flat_index = x_i * NUM_COLS + y_i
     print(f"Processing chunk {flat_index} at coordinates ({x_i}, {y_i}, {z_i})")
     # Load the data for this chunk
     loaded_zarr_store = load_zarr_data(all_files[flat_index])
@@ -150,26 +150,29 @@ def process(args):
     print(f"Processing chunk: {start} to {end}, file: {f_name}")
     if f_name.exists() and not OVERWRITE:
         return
-    rawdata = load_chunk_from_zarr_store(
-        loaded_zarr_store, start[0], end[0], start[1], end[1], start[2], end[2]
-    )
+    rawdata = load_data_from_zarr_store(loaded_zarr_store)
     for mip_level in reversed(range(MIP_CUTOFF, NUM_MIPS)):
         if mip_level == 0:
             downsampled = rawdata
             ds_start = start
             ds_end = end
         else:
-            ds_start = [int(math.ceil(s / (2**mip_level))) for s in start]
-            ds_end = [int(math.ceil(e / (2**mip_level))) for e in end]
+            factor = 2**mip_level
+            factor_tuple = (factor, factor, factor, 1)
+            ds_start = [int(np.round(s / (2**mip_level))) for s in start]
+            bounds_from_end = [int(math.ceil(e / (2**mip_level))) for e in end]
+            downsample_shape = [
+                int(math.ceil(s / f)) for s, f in zip(rawdata.shape, factor_tuple)
+            ]
+            ds_end_est = [s + d for s, d in zip(ds_start, downsample_shape)]
+            ds_end = [max(e1, e2) for e1, e2 in zip(ds_end_est, bounds_from_end)]
             print("DS fill", ds_start, ds_end)
-            downsampled = downsample_with_averaging(
-                rawdata, [2**mip_level, 2**mip_level, 2**mip_level, 1]
-            )
+            downsampled = downsample_with_averaging(rawdata, factor_tuple)
             print("Downsampled shape:", downsampled.shape)
 
         vols[mip_level][
             ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
-        ] = downsampled.astype(np.uint16)
+        ] = downsampled
     touch(f_name)
 
 
