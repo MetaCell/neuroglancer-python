@@ -44,18 +44,9 @@ def get_file_for_row_col(row, col):
     return all_files[index] if index < len(all_files) else None
 
 
-def load_zarr_data(file_path):
+def load_zarr_store(file_path):
     zarr_store = zarr.open(file_path, mode="r")
     return zarr_store
-
-
-def load_zarr_and_permute(file_path):
-    zarr_store = zarr.open(file_path, mode="r")
-    # Input is in Z, T, C, Y, X order
-    # Want XYTCZ order
-    data = zarr_store[:]
-    data = np.transpose(data, (4, 3, 1, 2, 0))  # Permute to XYTCZ
-    return zarr_store, data
 
 
 def load_data_from_zarr_store(zarr_store):
@@ -76,31 +67,39 @@ def load_data_from_zarr_store(zarr_store):
     return data
 
 
-zarr_store = load_zarr_data(all_files[0])
+zarr_store = load_zarr_store(all_files[0])
 
 # %% Inspect the data
 shape = zarr_store.shape
 # Input is in Z, T, C, Y, X order
 # Want XYTCZ order
-# single_file_shape = [shape[4], shape[3], shape[1], shape[2], shape[0]]
-single_file_dims_shape = [shape[4], shape[3], shape[1]]
+single_file_xyz_shape = [shape[4], shape[3], shape[1]]
 size_x = 1
 size_y = 1
 size_z = 1
+# Here, T and Z are kind of transferrable.
+# The reason is because the z dimension in neuroglancer is the time dimension
+# from the raw original data.
+# So both terms might be used to represent the same thing.
+# It's a bit unusual that t is being used as the z dimension,
+# but otherwise you can't do volume rendering in neuroglancer.
 
 num_channels = min(shape[2], NUM_CHANNELS)  # Limit to NUM_CHANNELS for memory usage
 data_type = "uint16"
-chunk_size = [64, 64, 32]
+chunk_size = [64, 64, 32] # chunk size in neuroglancer
+# The chunk size remains fixed across all mips, but at higher mips
+# the data will be downsampled, so the effective chunk size will be larger.
+# Because we use precomputed data format
+# Every chunk has to have all channels included
 
 volume_size = [
-    single_file_dims_shape[0] * NUM_ROWS,
-    single_file_dims_shape[1] * NUM_COLS,
-    single_file_dims_shape[2],
+    single_file_xyz_shape[0] * NUM_ROWS,
+    single_file_xyz_shape[1] * NUM_COLS,
+    single_file_xyz_shape[2],
 ]  # XYZ (T)
 print("Volume size:", volume_size)
 
 # %% Setup the cloudvolume info
-# TODO verify if non-axis aligned is ok or not
 info = CloudVolume.create_new_info(
     num_channels=num_channels,
     layer_type="image",
@@ -149,7 +148,7 @@ def process(args):
     x_i, y_i, z_i = args
     file_to_load = get_file_for_row_col(x_i, y_i)
     print(f"Processing {file_to_load} at coordinates ({x_i}, {y_i}, {z_i})")
-    loaded_zarr_store = load_zarr_data(file_to_load)
+    loaded_zarr_store = load_zarr_store(file_to_load)
     start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
     end = [
         min((x_i + 1) * chunk_shape[0], shape[0]),
@@ -202,6 +201,13 @@ reversed_coords = list(coords)
 reversed_coords.reverse()
 
 # %% Move the data across with multiple workers
+# TODO because we are using non-aligned writes, we can't use multiple workers
+# Or at least, we get a warning about it that I don't think we can ignore
+# if we want to use multiple workers, we'd need to fix this to have aligned writes
+# but that is trickier because we'd then need to load the data from multiple files
+# at the same time
+# Because one clean chunk in the data could be informed from multiple files
+# in the raw data
 # max_workers = 8
 
 # with ProcessPoolExecutor(max_workers=max_workers) as executor:
