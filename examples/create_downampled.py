@@ -3,7 +3,6 @@
 import itertools
 import math
 from pathlib import Path
-import time
 import numpy as np
 from cloudvolume import CloudVolume
 from cloudvolume.lib import touch, Vec
@@ -21,8 +20,9 @@ OUTPUT_PATH = Path("")
 # Other settings
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 OVERWRITE = False
-NUM_MIPS = 3
-MIP_CUTOFF = 0  # To save time you can start at the lowest resolution and work up
+NUM_MIPS = 5
+MIP_CUTOFF = 3  # To save time you can start at the lowest resolution and work up
+NUM_CHANNELS = 2  # For less memory usage (can't be 1 right now though)
 
 # %% Load the data
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
@@ -45,13 +45,13 @@ def load_zarr_and_permute(file_path):
 
 
 def load_chunk_from_zarr_store(
-    zarr_store, x_start, x_end, y_start, y_end, z_start, z_end, channel=0
+    zarr_store, x_start, x_end, y_start, y_end, z_start, z_end
 ):
     # Input is in Z, T, C, Y, X order
     data = zarr_store[
         :,  # T
         z_start:z_end,  # Z
-        channel,  # C
+        :NUM_CHANNELS,  # C
         y_start:y_end,  # Y
         x_start:x_end,  # X
     ]
@@ -60,7 +60,7 @@ def load_chunk_from_zarr_store(
     data = np.squeeze(data)  # Remove any singleton dimensions
     print("Loaded data shape:", data.shape)
     # Then we permute to XYTCZ
-    data = np.transpose(data, (-1, -2, 0))  # Permute to XYTCZ
+    data = np.transpose(data, (-1, -2, 0, 1))  # Permute to XYTCZ
     return data
 
 
@@ -68,9 +68,10 @@ zarr_store = load_zarr_data(all_files[0])
 
 # It may take too long to just load one file, might need to process in chunks
 # %% Check how long to load a single file
-start_time = time.time()
-data = load_chunk_from_zarr_store(zarr_store, 0, 256, 0, 200, 0, 128, channel=0)
-print("Time to load a single file:", time.time() - start_time)
+# import time
+# start_time = time.time()
+# data = load_chunk_from_zarr_store(zarr_store, 0, 256, 0, 200, 0, 128)
+# print("Time to load a single file:", time.time() - start_time)
 
 # %% Inspect the data
 shape = zarr_store.shape
@@ -82,9 +83,9 @@ size_x = 1
 size_y = 1
 size_z = 1
 
-num_channels = shape[2]
+num_channels = min(shape[2], NUM_CHANNELS)  # Limit to NUM_CHANNELS for memory usage
 data_type = "uint16"
-chunk_size = [256, 256, 128]
+chunk_size = [64, 64, 32]
 
 # You can provide a subset here also
 num_rows = 1
@@ -128,9 +129,6 @@ progress_dir = OUTPUT_PATH / "progress"
 progress_dir.mkdir(exist_ok=True)
 
 # %% Functions for moving data
-# TODO setup file loop
-# TODO setup channel handling
-
 shape = single_file_dims_shape
 chunk_shape = np.array([1500, 936, 687])  # this is for reading data
 num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
@@ -138,6 +136,10 @@ num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
 def process(args):
     x_i, y_i, z_i = args
+    flat_index = x_i * num_cols + y_i
+    print(f"Processing chunk {flat_index} at coordinates ({x_i}, {y_i}, {z_i})")
+    # Load the data for this chunk
+    loaded_zarr_store = load_zarr_data(all_files[flat_index])
     start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
     end = [
         min((x_i + 1) * chunk_shape[0], shape[0]),
@@ -149,7 +151,7 @@ def process(args):
     if f_name.exists() and not OVERWRITE:
         return
     rawdata = load_chunk_from_zarr_store(
-        zarr_store, start[0], end[0], start[1], end[1], start[2], end[2], channel=0
+        loaded_zarr_store, start[0], end[0], start[1], end[1], start[2], end[2]
     )
     for mip_level in reversed(range(MIP_CUTOFF, NUM_MIPS)):
         if mip_level == 0:
@@ -157,23 +159,23 @@ def process(args):
             ds_start = start
             ds_end = end
         else:
+            ds_start = [int(math.ceil(s / (2**mip_level))) for s in start]
+            ds_end = [int(math.ceil(e / (2**mip_level))) for e in end]
+            print("DS fill", ds_start, ds_end)
             downsampled = downsample_with_averaging(
-                rawdata, [2 * mip_level, 2 * mip_level, 2 * mip_level]
+                rawdata, [2**mip_level, 2**mip_level, 2**mip_level, 1]
             )
-            ds_start = [int(math.ceil(s / (2 * mip_level))) for s in start]
-            ds_end = [int(math.ceil(e / (2 * mip_level))) for e in end]
-            print(ds_start, ds_end)
             print("Downsampled shape:", downsampled.shape)
 
         vols[mip_level][
             ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
-        ] = downsampled
+        ] = downsampled.astype(np.uint16)
     touch(f_name)
 
 
 # %% Try with a single chunk to see if it works
-x_i, y_i, z_i = 0, 0, 0
-process((x_i, y_i, z_i))
+# x_i, y_i, z_i = 0, 0, 0
+# process((x_i, y_i, z_i))
 
 
 # %% Loop over all the chunks
