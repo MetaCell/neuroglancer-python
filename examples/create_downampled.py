@@ -21,16 +21,27 @@ OUTPUT_PATH = Path("")
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
 OVERWRITE = False
 NUM_MIPS = 5
-MIP_CUTOFF = 3  # To save time you can start at the lowest resolution and work up
-NUM_CHANNELS = 2  # For less memory usage (can't be 1 right now though)
+MIP_CUTOFF = 0  # To save time you can start at the lowest resolution and work up
+NUM_CHANNELS = 4  # For less memory usage (can't be 1 right now though)
 NUM_ROWS = 3
 NUM_COLS = 6
 ALLOW_NON_ALIGNED_WRITE = True
 
 # %% Load the data
 OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
-# Need to figure out some sizes by checking the data
+
+# You don't need all files if you download them on demand
+# See get_file_for_row_col function
 all_files = list(INPUTFOLDER.glob("**/*.zarr"))
+
+
+def get_file_for_row_col(row, col):
+    """Get the file path for a specific row and column."""
+    if row < 0 or row >= NUM_ROWS or col < 0 or col >= NUM_COLS:
+        raise ValueError("Row and column indices must be within the defined grid.")
+    index = row * NUM_COLS + col
+    # You could also download the file here and then delete it after use
+    return all_files[index] if index < len(all_files) else None
 
 
 def load_zarr_data(file_path):
@@ -136,10 +147,9 @@ num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
 def process(args):
     x_i, y_i, z_i = args
-    flat_index = x_i * NUM_COLS + y_i
-    print(f"Processing chunk {flat_index} at coordinates ({x_i}, {y_i}, {z_i})")
-    # Load the data for this chunk
-    loaded_zarr_store = load_zarr_data(all_files[flat_index])
+    file_to_load = get_file_for_row_col(x_i, y_i)
+    print(f"Processing {file_to_load} at coordinates ({x_i}, {y_i}, {z_i})")
+    loaded_zarr_store = load_zarr_data(file_to_load)
     start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
     end = [
         min((x_i + 1) * chunk_shape[0], shape[0]),
