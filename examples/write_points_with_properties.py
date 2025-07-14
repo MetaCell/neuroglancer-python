@@ -23,7 +23,6 @@ def write_some_annotations(
             id="size",
             description="Size of the annotation",
             type="float32",
-            default=10,
         ),
         neuroglancer.AnnotationPropertySpec(
             id="p_int8",
@@ -65,6 +64,14 @@ def write_some_annotations(
                 "Three",
             ],
         ),
+        neuroglancer.AnnotationPropertySpec(
+            id="p_boola",
+            type="uint16",
+            default=1,
+            description="A boolean property",
+            enum_values=[0, 1],
+            enum_labels=["False", "True"],
+        ),
     ]
 
     writer = neuroglancer.write_annotations.AnnotationWriter(
@@ -94,14 +101,15 @@ def write_some_annotations(
         p_fnum32=2.6,
     )
     writer.add_point(
-        [40, 50, 52],
-        color=(0, 0, 255),  # RGB color
+        [40, 50, 20],
+        color="#0000ff",  # RGB color
         size=20,
         p_int8=3,
         p_uint8=4,
         rgba_color=(0, 200, 255, 14),  # RGBA color with part opacity
         p_enum1=3,
         p_fnum32=3.0,
+        p_boola=0,
     )
     writer.add_point([40, 50, 52])
     writer.write(os.path.join(output_dir, "point"))
