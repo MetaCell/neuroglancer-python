@@ -19,6 +19,10 @@ except ImportError:
     HAS_DOTENV = False
     print("Warning: python-dotenv not installed. Install with 'pip install python-dotenv' for .env file support.")
 
+import re
+import tempfile
+import shutil
+
 # %% Load environment configuration
 
 HERE = Path(__file__).parent
@@ -154,6 +158,100 @@ def get_file_list():
 # Get the list of available files
 all_files = get_file_list()
 
+def extract_row_col_from_filename(filename):
+    """
+    Extract row and column information from filename.
+    Assumes filenames contain row/col info in a pattern like 'r{row}c{col}' or '{row}_{col}'.
+    This function should be customized based on your actual filename pattern.
+    
+    Args:
+        filename: The filename to parse
+        
+    Returns:
+        tuple: (row, col) or (None, None) if pattern not found
+    """
+    filename_str = str(filename)
+    
+    # Try pattern like 'r0c1' or 'row0col1'
+    match = re.search(r'r(?:ow)?(\d+)c(?:ol)?(\d+)', filename_str, re.IGNORECASE)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    
+    # Try pattern like '0_1' or '00_01'
+    match = re.search(r'(\d+)_(\d+)', filename_str)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    
+    # Try pattern where position in sorted list determines row/col
+    # This is a fallback - assumes files are sorted in row-major order
+    return None, None
+
+def compute_grid_dimensions(file_list):
+    """
+    Compute the number of rows and columns from the available files.
+    
+    Args:
+        file_list: List of file paths or names
+        
+    Returns:
+        tuple: (num_rows, num_cols)
+    """
+    if not file_list:
+        return 0, 0
+    
+    rows_found = set()
+    cols_found = set()
+    
+    for filepath in file_list:
+        row, col = extract_row_col_from_filename(filepath)
+        if row is not None and col is not None:
+            rows_found.add(row)
+            cols_found.add(col)
+    
+    if rows_found and cols_found:
+        num_rows = max(rows_found) + 1  # Assuming 0-indexed
+        num_cols = max(cols_found) + 1  # Assuming 0-indexed
+        print(f"Detected grid dimensions from filenames: {num_rows} rows × {num_cols} columns")
+        return num_rows, num_cols
+    else:
+        # Fallback: try to infer from total number of files
+        total_files = len(file_list)
+        # Try to find a reasonable rectangular arrangement
+        import math
+        num_cols = int(math.sqrt(total_files))
+        num_rows = math.ceil(total_files / num_cols)
+        print(f"Could not detect grid dimensions from filenames. Using fallback: {num_rows} rows × {num_cols} columns for {total_files} files")
+        return num_rows, num_cols
+
+# Compute actual grid dimensions from files
+COMPUTED_NUM_ROWS, COMPUTED_NUM_COLS = compute_grid_dimensions(all_files)
+
+# Use computed dimensions if they seem reasonable, otherwise fall back to config
+if COMPUTED_NUM_ROWS > 0 and COMPUTED_NUM_COLS > 0:
+    NUM_ROWS = COMPUTED_NUM_ROWS
+    NUM_COLS = COMPUTED_NUM_COLS
+    print(f"Using computed grid dimensions: {NUM_ROWS} rows × {NUM_COLS} columns")
+else:
+    print(f"Using configured grid dimensions: {NUM_ROWS} rows × {NUM_COLS} columns")
+
+# %% File management functions
+# 
+# The new file management system provides three main functions:
+# 
+# 1. download_file(row, col): Downloads file from GCS/copies from local to cache
+# 2. load_file(row, col): Downloads (if needed) and loads zarr store 
+# 3. delete_cached_file(row, col): Removes cached file to save disk space
+#
+# The system automatically handles:
+# - Downloading from GCS bucket or copying from local filesystem
+# - Caching files locally to avoid repeated downloads  
+# - Row/column to filename mapping (tries pattern matching first, falls back to index)
+# - Error handling and logging
+#
+# Usage examples:
+# - zarr_store = load_file(0, 1)  # Load file for row 0, column 1
+# - delete_cached_file(0, 1)      # Delete cached file to free space
+
 
 # TODO change this to be more robust.
 # It needs to have three things.
@@ -162,19 +260,176 @@ all_files = get_file_list()
 # 2. It needs to be able to download the file if it is not already present
 # 3. It needs to be able to delete the file after use
 
-# TODO make num rows and num cols be inferred from the files present
-# by looking at the file names and seeing what the max row and col are
-# instead of being hard coded
-def get_file_for_row_col(row, col):
-    """Get the file path for a specific row and column."""
+def get_local_cache_path(row, col):
+    """
+    Get the local cache path where a file for the given row/col should be stored.
+    
+    Args:
+        row: Row index
+        col: Column index
+        
+    Returns:
+        Path: Local cache path for the file
+    """
+    cache_dir = OUTPUT_PATH / "cache"
+    cache_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Get the remote file path/name for this row/col
+    remote_file = get_remote_file_path(row, col)
+    if remote_file is None:
+        return None
+        
+    # Create local filename based on remote file
+    if USE_GCS_BUCKET:
+        # For GCS files, use the blob name but replace slashes with underscores
+        local_name = str(remote_file).replace('/', '_').replace('\\', '_')
+    else:
+        # For local files, just use the filename
+        local_name = Path(remote_file).name
+    
+    return cache_dir / local_name
+
+def get_remote_file_path(row, col):
+    """
+    Get the remote file path (GCS blob name or local path) for a specific row and column.
+    
+    Args:
+        row: Row index
+        col: Column index
+        
+    Returns:
+        str or Path: Remote file path, or None if not found
+    """
     if row < 0 or row >= NUM_ROWS or col < 0 or col >= NUM_COLS:
-        raise ValueError("Row and column indices must be within the defined grid.")
+        raise ValueError(f"Row and column indices must be within the defined grid (0-{NUM_ROWS-1}, 0-{NUM_COLS-1}).")
+    
+    # Try to find file by row/col pattern first
+    for filepath in all_files:
+        file_row, file_col = extract_row_col_from_filename(filepath)
+        if file_row == row and file_col == col:
+            return filepath
+    
+    # Fallback: use index-based access (assumes row-major order)
     index = row * NUM_COLS + col
-    return all_files[index] if index < len(all_files) else None
+    if index < len(all_files):
+        return all_files[index]
+    
+    return None
+
+def download_file(row, col):
+    """
+    Download the file for a specific row and column to local cache.
+    
+    Args:
+        row: Row index  
+        col: Column index
+        
+    Returns:
+        Path: Local cache path of downloaded file, or None if not found
+    """
+    remote_file = get_remote_file_path(row, col)
+    if remote_file is None:
+        print(f"No file found for row {row}, col {col}")
+        return None
+    
+    local_path = get_local_cache_path(row, col)
+    if local_path is None:
+        return None
+        
+    # If file already exists locally, no need to download
+    if local_path.exists():
+        print(f"File already cached: {local_path}")
+        return local_path
+    
+    if USE_GCS_BUCKET:
+        # Download from GCS
+        try:
+            client = storage.Client()
+            bucket = client.bucket(GCS_BUCKET_NAME)
+            blob = bucket.blob(remote_file)
+            
+            print(f"Downloading {remote_file} to {local_path}")
+            blob.download_to_filename(str(local_path))
+            print(f"Downloaded successfully: {local_path}")
+            return local_path
+        except Exception as e:
+            print(f"Error downloading {remote_file}: {e}")
+            return None
+    else:
+        # Copy from local filesystem
+        try:
+            print(f"Copying {remote_file} to {local_path}")
+            shutil.copy2(remote_file, local_path)
+            print(f"Copied successfully: {local_path}")
+            return local_path
+        except Exception as e:
+            print(f"Error copying {remote_file}: {e}")
+            return None
+
+def load_file(row, col):
+    """
+    Load the zarr store for a specific row and column.
+    Downloads the file first if not already cached locally.
+    
+    Args:
+        row: Row index
+        col: Column index
+        
+    Returns:
+        zarr store object, or None if not found/error
+    """
+    local_path = download_file(row, col)
+    if local_path is None:
+        return None
+    
+    try:
+        print(f"Loading zarr store from {local_path}")
+        zarr_store = zarr.open(str(local_path), mode="r")
+        return zarr_store
+    except Exception as e:
+        print(f"Error loading zarr store from {local_path}: {e}")
+        return None
+
+def delete_cached_file(row, col):
+    """
+    Delete the locally cached file for a specific row and column to save disk space.
+    
+    Args:
+        row: Row index
+        col: Column index
+        
+    Returns:
+        bool: True if file was deleted or didn't exist, False if error
+    """
+    local_path = get_local_cache_path(row, col)
+    if local_path is None:
+        return True
+        
+    try:
+        if local_path.exists():
+            local_path.unlink()
+            print(f"Deleted cached file: {local_path}")
+        return True
+    except Exception as e:
+        print(f"Error deleting cached file {local_path}: {e}")
+        return False
+
+# Backward compatibility function that uses the new structure
+def get_file_for_row_col(row, col):
+    """
+    Get the file path for a specific row and column.
+    This is kept for backward compatibility, but the new approach is to use
+    load_file() which handles download automatically.
+    """
+    return get_remote_file_path(row, col)
 
 
 def load_zarr_store(file_path):
-    zarr_store = zarr.open(file_path, mode="r")
+    """
+    Load zarr store from a file path.
+    This function is kept for backward compatibility.
+    """
+    zarr_store = zarr.open(str(file_path), mode="r")
     return zarr_store
 
 
@@ -198,7 +453,12 @@ def load_data_from_zarr_store(zarr_store):
     return data
 
 
-zarr_store = load_zarr_store(all_files[0])
+# Load the first file to inspect data shape and properties
+print("Loading first file for data inspection...")
+zarr_store = load_file(0, 0)  # Load file at row 0, col 0
+if zarr_store is None:
+    print("Error: Could not load first file for data inspection")
+    exit(1)
 
 # %% Inspect the data
 shape = zarr_store.shape
@@ -285,9 +545,15 @@ num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
 def process(args):
     x_i, y_i, z_i = args
-    file_to_load = get_file_for_row_col(x_i, y_i)
-    print(f"Processing {file_to_load} at coordinates ({x_i}, {y_i}, {z_i})")
-    loaded_zarr_store = load_zarr_store(file_to_load)
+    
+    # Use the new load_file function that handles download/caching
+    print(f"Loading file for coordinates ({x_i}, {y_i}, {z_i})")
+    loaded_zarr_store = load_file(x_i, y_i)
+    
+    if loaded_zarr_store is None:
+        print(f"Warning: Could not load file for row {x_i}, col {y_i}. Skipping...")
+        return
+        
     start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
     end = [
         min((x_i + 1) * chunk_shape[0], shape[0]),
@@ -298,7 +564,10 @@ def process(args):
     print(f"Processing chunk: {start} to {end}, file: {f_name}")
     if f_name.exists() and not OVERWRITE:
         return
+        
     rawdata = load_data_from_zarr_store(loaded_zarr_store)
+    
+    # Process all mip levels
     for mip_level in reversed(range(MIP_CUTOFF, NUM_MIPS)):
         if mip_level == 0:
             downsampled = rawdata
@@ -321,7 +590,13 @@ def process(args):
         vols[mip_level][
             ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
         ] = downsampled
+    
+    # Mark chunk as complete
     touch(f_name)
+    
+    # Clean up cached file to save disk space
+    # (you can comment this out if you want to keep files cached)
+    delete_cached_file(x_i, y_i)
 
 
 # %% Try with a single chunk to see if it works
