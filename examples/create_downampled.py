@@ -413,7 +413,9 @@ def upload_file_to_gcs(local_file_path, gcs_file_path):
         bool: True if successful, False otherwise
     """
     if not use_gcs_output:
-        print("GCS output not configured, skipping upload.")
+        print(
+            f"GCS output not configured, skipping upload of {local_file_path} to {gcs_file_path}."
+        )
         return True
 
     try:
@@ -428,53 +430,6 @@ def upload_file_to_gcs(local_file_path, gcs_file_path):
     except Exception as e:
         print(f"Error uploading chunk {local_file_path} to GCS: {e}")
         return False
-
-
-def check_and_upload_completed_chunks():
-    """
-    Check for completed chunk files and upload them to GCS if configured.
-    This helps manage local disk space by uploading and optionally removing completed chunks.
-
-    Returns:
-        int: Number of chunks uploaded
-    """
-    if not use_gcs_output:
-        return 0
-
-    uploaded_count = 0
-
-    try:
-        # Look for chunk files in the output directory
-        for mip_level in range(num_mips):
-            mip_dir = output_path / str(mip_level)
-            if mip_dir.exists():
-                # Find all chunk files in this mip level
-                for chunk_file in mip_dir.glob("**/*"):
-                    if chunk_file.is_file():
-                        # Construct the GCS path for this chunk
-                        relative_path = chunk_file.relative_to(output_path)
-                        gcs_chunk_path = (
-                            gcs_output_path.rstrip("/")
-                            + "/"
-                            + str(relative_path).replace("\\", "/")
-                        )
-
-                        # Check if chunk should be uploaded (you can add more logic here)
-                        if upload_file_to_gcs(chunk_file, gcs_chunk_path):
-                            uploaded_count += 1
-                            print(f"Uploaded chunk: {gcs_chunk_path}")
-
-                            # Optionally remove local chunk to save space
-                            # Uncomment the next line if you want to delete local chunks after upload
-                            # chunk_file.unlink()
-
-        if uploaded_count > 0:
-            print(f"Uploaded {uploaded_count} chunks to GCS output bucket")
-
-    except Exception as e:
-        print(f"Error checking/uploading chunks: {e}")
-
-    return uploaded_count
 
 
 def load_zarr_store(file_path):
@@ -515,10 +470,10 @@ if zarr_store is None:
     exit(1)
 
 # %% Inspect the data
-shape = zarr_store.shape
+volume_shape = zarr_store.shape
 # Input is in Z, T, C, Y, X order
 # Want XYTCZ order
-single_file_xyz_shape = [shape[4], shape[3], shape[1]]
+single_file_xyz_shape = [volume_shape[4], volume_shape[3], volume_shape[1]]
 # Here, T and Z are kind of transferrable.
 # The reason is because the z dimension in neuroglancer is the time dimension
 # from the raw original data.
@@ -526,7 +481,9 @@ single_file_xyz_shape = [shape[4], shape[3], shape[1]]
 # It's a bit unusual that t is being used as the z dimension,
 # but otherwise you can't do volume rendering in neuroglancer.
 
-num_channels = min(shape[2], channel_limit)  # Limit to NUM_CHANNELS for memory usage
+num_channels = min(
+    volume_shape[2], channel_limit
+)  # Limit to NUM_CHANNELS for memory usage
 data_type = "uint16"
 
 # %% Compute optimal chunk size based on data shape and MIP levels
@@ -653,9 +610,9 @@ progress_dir = output_path / "progress"
 progress_dir.mkdir(exist_ok=True)
 
 # %% Functions for moving data
-shape = volume_size
-chunk_shape = np.array(single_file_xyz_shape)  # this is for reading data
-num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
+volume_shape = volume_size
+single_file_shape = np.array(single_file_xyz_shape)  # this is for reading data
+num_chunks_per_dim = np.ceil(volume_shape / single_file_shape).astype(int)
 
 
 def process(args):
@@ -669,11 +626,15 @@ def process(args):
         print(f"Warning: Could not load file for row {x_i}, col {y_i}. Skipping...")
         return
 
-    start = [x_i * chunk_shape[0], y_i * chunk_shape[1], z_i * chunk_shape[2]]
+    start = [
+        x_i * single_file_shape[0],
+        y_i * single_file_shape[1],
+        z_i * single_file_shape[2],
+    ]
     end = [
-        min((x_i + 1) * chunk_shape[0], shape[0]),
-        min((y_i + 1) * chunk_shape[1], shape[1]),
-        min((z_i + 1) * chunk_shape[2], shape[2]),
+        min((x_i + 1) * single_file_shape[0], volume_shape[0]),
+        min((y_i + 1) * single_file_shape[1], volume_shape[1]),
+        min((z_i + 1) * single_file_shape[2], volume_shape[2]),
     ]
     f_name = progress_dir / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}.done"
     print(f"Processing chunk: {start} to {end}, file: {f_name}")
@@ -688,31 +649,65 @@ def process(args):
             downsampled = rawdata
             ds_start = start
             ds_end = end
+            if not allow_non_aligned_write:
+                # Align to chunk boundaries
+                ds_start = [
+                    int(round(math.floor(s / c) * c))
+                    for s, c in zip(ds_start, chunk_size)
+                ]
+                ds_end = [
+                    int(round(math.ceil(e / c) * c)) for e, c in zip(ds_end, chunk_size)
+                ]
+                ds_end = [min(e, s) for e, s in zip(ds_end, volume_shape)]
         else:
             factor = 2**mip_level
             factor_tuple = (factor, factor, factor, 1)
             ds_start = [int(np.round(s / (2**mip_level))) for s in start]
-            # Actually make ds_start to be a multiple of chunk size
-            old_start = ds_start.copy()
-            ds_start = [int(np.round(s / c) * c) for s, c in zip(ds_start, chunk_shape)]
-            if ds_start != old_start:
-                print(f"Adjusted ds_start from {old_start} to {ds_start}")
-            bounds_from_end = [int(math.ceil(e / (2**mip_level))) for e in end]
+            if not allow_non_aligned_write:
+                # Align to chunk boundaries
+                ds_start = [
+                    int(round(math.floor(s / c) * c))
+                    for s, c in zip(ds_start, chunk_size)
+                ]
             downsample_shape = [
                 int(math.ceil(s / f)) for s, f in zip(rawdata.shape, factor_tuple)
             ]
             ds_end_est = [s + d for s, d in zip(ds_start, downsample_shape)]
-            # Actually make ds_end_est to be a multiple of chunk size
-            old_end = ds_end_est.copy()
-            ds_end_est = [
-                int(np.round(e / c) * c) for e, c in zip(ds_end_est, chunk_shape)
-            ]
-            if ds_end_est != old_end:
-                print(f"Adjusted ds_end_est from {old_end} to {ds_end_est}")
-            ds_end = [max(e1, e2) for e1, e2 in zip(ds_end_est, bounds_from_end)]
+            if allow_non_aligned_write:
+                bounds_from_end = [int(math.ceil(e / (2**mip_level))) for e in end]
+                ds_end = [max(e1, e2) for e1, e2 in zip(ds_end_est, bounds_from_end)]
+            else:
+                # Align to chunk boundaries
+                ds_end = [
+                    int(round(math.ceil(e / c) * c))
+                    for e, c in zip(ds_end_est, chunk_size)
+                ]
+                ds_end = [min(e, s) for e, s in zip(ds_end, volume_shape)]
             print("DS fill", ds_start, ds_end)
             downsampled = downsample_with_averaging(rawdata, factor_tuple)
             print("Downsampled shape:", downsampled.shape)
+
+        if not allow_non_aligned_write:
+            # TODO may need to ignore padding at the data edges
+            # We may need to pad the downsampled data to fit the chunk boundaries
+            pad_width = [
+                (0, max(0, de - ds - s))
+                for ds, de, s in zip(ds_start, ds_end, downsampled.shape)
+            ]
+            pad_width.append((0, 0))  # No padding for channel dimension
+            # we should never pad more than the mip level times a factor inverse
+            max_allowed_pad = 2 ** (num_mips - mip_level)
+            max_actual_pad = max(pw[1] for pw in pad_width)
+            if max_actual_pad > max_allowed_pad:
+                raise ValueError(
+                    f"Padding too large at mip {mip_level}: {pad_width}, max allowed {max_allowed_pad}"
+                )
+            if any(pw[1] > 0 for pw in pad_width):
+                print("Padding downsampled data with:", pad_width)
+                downsampled = np.pad(
+                    downsampled, pad_width, mode="constant", constant_values=0
+                )
+                print("Padded downsampled shape:", downsampled.shape)
 
         vols[mip_level][
             ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
@@ -724,6 +719,9 @@ def process(args):
     # Clean up cached file to save disk space
     # (you can comment this out if you want to keep files cached)
     delete_cached_file(x_i, y_i)
+
+    # Return the bounds of the processed chunk
+    return (start, end)
 
 
 # %% Try with a single chunk to see if it works
@@ -754,31 +752,126 @@ reversed_coords.reverse()
 # with ProcessPoolExecutor(max_workers=max_workers) as executor:
 #     executor.map(process, coords)
 
+# %% Function to check the output directory for completed chunks and upload them to GCS
+
+processed_chunks_bounds = [(np.inf, np.inf, np.inf), (-np.inf, -np.inf, -np.inf)]
+
+
+# TODO this probably wants to bulk together uploads to reduce overhead
+def check_and_upload_completed_chunks():
+    """
+    Check for completed chunk files and upload them to GCS if configured.
+    This helps manage local disk space by uploading and optionally removing completed chunks.
+
+    Returns:
+        int: Number of chunks uploaded
+    """
+    if not use_gcs_output:
+        return 0
+
+    uploaded_count = 0
+
+    for mip_level in range(num_mips):
+        factor = 2**mip_level
+        dir_name = f"{factor}_{factor}_{factor}"
+        output_path_for_mip = output_path / dir_name
+        # For each file in the output dir check if it is fully covered by the already processed bounds
+        # First, we loop over all the files in the output directory
+        for chunk_file in output_path_for_mip.glob("**/*"):
+            # 1. Pull out the bounds of the chunk from the filename
+            # filename format is x0-x1_y0-y1_z0-z1
+            match = re.search(r"(\d+)-(\d+)_(\d+)-(\d+)_(\d+)-(\d+)", str(chunk_file))
+            if not match:
+                continue
+            x0, x1, y0, y1, z0, z1 = map(int, match.groups())
+            chunk_bounds = [(x0, y0, z0), (x1, y1, z1)]
+            # Multiply by the factor to get back to original resolution
+            chunk_bounds = [
+                [c * factor for c in chunk_bounds[0]],
+                [c * factor for c in chunk_bounds[1]],
+            ]
+            # 2. Check if the chunk is fully covered by the processed bounds
+            if all(
+                pb0 <= cb0 and pb1 >= cb1
+                for pb0, pb1, cb0, cb1 in zip(
+                    processed_chunks_bounds[0],
+                    processed_chunks_bounds[1],
+                    chunk_bounds[0],
+                    chunk_bounds[1],
+                )
+            ):
+                # 3. If it is, upload it to GCS
+                relative_path = chunk_file.relative_to(output_path)
+                gcs_chunk_path = (
+                    gcs_output_path.rstrip("/")
+                    + "/"
+                    + str(relative_path).replace("\\", "/")
+                )
+                if upload_file_to_gcs(chunk_file, gcs_chunk_path):
+                    uploaded_count += 1
+                    print(f"Uploaded chunk: {gcs_chunk_path}")
+                    # Remove local chunk to save space
+                    chunk_file.unlink()
+
+    return uploaded_count
+
+
+def upload_any_remaining_chunks():
+    """
+    Upload any remaining chunks in the output directory to GCS.
+    This is called at the end of processing to ensure all data is uploaded.
+
+    Returns:
+        int: Number of chunks uploaded
+    """
+    uploaded_count = 0
+
+    for mip_level in range(num_mips):
+        factor = 2**mip_level
+        dir_name = f"{factor}_{factor}_{factor}"
+        output_path_for_mip = output_path / dir_name
+        # For each file in the output dir
+        for chunk_file in output_path_for_mip.glob("**/*"):
+            relative_path = chunk_file.relative_to(output_path)
+            gcs_chunk_path = (
+                gcs_output_path.rstrip("/")
+                + "/"
+                + str(relative_path).replace("\\", "/")
+            )
+            if upload_file_to_gcs(chunk_file, gcs_chunk_path):
+                uploaded_count += 1
+                print(f"Uploaded chunk: {gcs_chunk_path}")
+                # Remove local chunk to save space
+                chunk_file.unlink()
+
+    return uploaded_count
+
+
 # %% Move the data across with a single worker
-chunk_count = 0
+total_uploaded_files = 0
 for coord in reversed_coords:
-    process(coord)
-    chunk_count += 1
+    bounds = process(coord)
+    if bounds is not None:
+        start, end = bounds
+        processed_chunks_bounds[0] = [
+            min(ps, s) for ps, s in zip(processed_chunks_bounds[0], start)
+        ]
+        processed_chunks_bounds[1] = [
+            max(pe, e) for pe, e in zip(processed_chunks_bounds[1], end)
+        ]
+        print(f"Updated processed bounds: {processed_chunks_bounds}")
 
     # Periodically check and upload completed chunks to save disk space
     # This is done every 10 chunks to balance upload frequency vs overhead
-    if use_gcs_output and chunk_count % 10 == 0:
-        print(f"Processed {chunk_count} chunks, checking for uploads...")
-        check_and_upload_completed_chunks()
+    total_uploaded_files += check_and_upload_completed_chunks()
+    print(f"Total uploaded chunks so far: {total_uploaded_files}")
 
-    # The original TODO was about uploading chunks as they're completed
-    # The above implementation provides a basic version of this functionality
-    # For more sophisticated chunk management, you could:
-    # 1. Track which specific chunks are complete across all MIP levels
-    # 2. Only upload chunks that are fully written at all relevant MIP levels
-    # 3. Implement more granular deletion of local chunks after successful upload
-    # 4. Add retry logic for failed uploads
 
 # Final upload of any remaining chunks
 if use_gcs_output:
     print("Processing complete, uploading any remaining chunks...")
-    final_upload_count = check_and_upload_completed_chunks()
-    print(f"Final upload completed: {final_upload_count} chunks uploaded")
+    total_uploaded_files += upload_any_remaining_chunks()
+    print(f"Final upload completed: {total_uploaded_files} chunks uploaded")
 
 # %% Serve the dataset to be used in neuroglancer
 vols[0].viewer(port=1337)
