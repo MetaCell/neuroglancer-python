@@ -751,7 +751,7 @@ reversed_coords.reverse()
 
 # %% Function to check the output directory for completed chunks and upload them to GCS
 
-processed_chunks_bounds = None
+processed_chunks_bounds = []
 uploaded_files = []
 
 
@@ -773,6 +773,8 @@ def check_and_upload_completed_chunks():
         # For each file in the output dir check if it is fully covered by the already processed bounds
         # First, we loop over all the files in the output directory
         for chunk_file in output_path_for_mip.glob("**/*"):
+            if chunk_file in [uf[0] for uf in uploaded_files]:
+                continue
             # 1. Pull out the bounds of the chunk from the filename
             # filename format is x0-x1_y0-y1_z0-z1
             match = re.search(r"(\d+)-(\d+)_(\d+)-(\d+)_(\d+)-(\d+)", str(chunk_file))
@@ -790,15 +792,10 @@ def check_and_upload_completed_chunks():
                 min(cb, vs) for cb, vs in zip(chunk_bounds[1], volume_size)
             ]
             # 2. Check if the chunk is fully covered by the processed bounds
-            if all(
-                pb0 <= cb0 and pb1 >= cb1
-                for pb0, pb1, cb0, cb1 in zip(
-                    processed_chunks_bounds[0],
-                    processed_chunks_bounds[1],
-                    chunk_bounds[0],
-                    chunk_bounds[1],
-                )
-            ):
+            # TODO actually do this check
+            covered = True
+            
+            if covered:
                 # 3. If it is, upload it to GCS
                 relative_path = chunk_file.relative_to(output_path)
                 gcs_chunk_path = (
@@ -853,16 +850,7 @@ total_uploaded_files = 0
 for coord in reversed_coords:
     bounds = process(coord)
     start, end = bounds
-    if processed_chunks_bounds is None:
-        processed_chunks_bounds = [start, end]
-    else:
-        processed_chunks_bounds[0] = [
-            min(ps, s) for ps, s in zip(processed_chunks_bounds[0], start)
-        ]
-        processed_chunks_bounds[1] = [
-            max(pe, e) for pe, e in zip(processed_chunks_bounds[1], end)
-        ]
-        print(f"Updated processed bounds: {processed_chunks_bounds}")
+    processed_chunks_bounds.append((start, end))
 
     # Periodically check and upload completed chunks to save disk space
     # This is done every 10 chunks to balance upload frequency vs overhead
