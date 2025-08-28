@@ -10,6 +10,7 @@ import zarr
 from neuroglancer.downsample import downsample_with_averaging
 from google.cloud import storage
 import os
+import re
 
 # Try to import dotenv, fall back to manual parsing if not available
 try:
@@ -22,9 +23,6 @@ except ImportError:
         "Warning: python-dotenv not installed. Install with 'pip install python-dotenv' for .env file support."
     )
 
-import re
-import tempfile
-import shutil
 
 # %% Load environment configuration
 
@@ -63,33 +61,23 @@ def load_env_config():
         "GCS_BUCKET_NAME": os.getenv("GCS_BUCKET_NAME", "your-bucket-name"),
         "GCS_PREFIX": os.getenv("GCS_PREFIX", "path/to/zarr/files/"),
         "GCS_FILE_EXTENSION": os.getenv("GCS_FILE_EXTENSION", ".zarr"),
-        
         # Output GCS bucket configuration (for uploading results)
         "USE_GCS_OUTPUT": parse_bool(os.getenv("USE_GCS_OUTPUT", "false")),
-        "GCS_OUTPUT_BUCKET_NAME": os.getenv("GCS_OUTPUT_BUCKET_NAME", "your-output-bucket-name"),
+        "GCS_OUTPUT_BUCKET_NAME": os.getenv(
+            "GCS_OUTPUT_BUCKET_NAME", "your-output-bucket-name"
+        ),
         "GCS_OUTPUT_PREFIX": os.getenv("GCS_OUTPUT_PREFIX", "processed/"),
-        
         # Local paths (used when USE_GCS_BUCKET is False)
-        "INPUTFOLDER": Path(os.getenv("INPUTFOLDER", "/temp/in")),
+        "INPUT_PATH": Path(os.getenv("INPUT_PATH", "/temp/in")),
         "OUTPUT_PATH": Path(os.getenv("OUTPUT_PATH", "/temp/out")),
         # Processing settings
         "OVERWRITE": parse_bool(os.getenv("OVERWRITE", "false")),
         "NUM_MIPS": int(os.getenv("NUM_MIPS", "5")),
         "MIP_CUTOFF": int(os.getenv("MIP_CUTOFF", "0")),
         "CHANNEL_LIMIT": int(os.getenv("CHANNEL_LIMIT", "4")),
-        "NUM_ROWS": int(os.getenv("NUM_ROWS", "3")),
-        "NUM_COLS": int(os.getenv("NUM_COLS", "6")),
         "ALLOW_NON_ALIGNED_WRITE": parse_bool(
             os.getenv("ALLOW_NON_ALIGNED_WRITE", "false")
         ),
-        # Optional resolution settings
-        "SIZE_X": int(os.getenv("SIZE_X", "1")),
-        "SIZE_Y": int(os.getenv("SIZE_Y", "1")),
-        "SIZE_Z": int(os.getenv("SIZE_Z", "1")),
-        # Optional chunk settings
-        "CHUNK_SIZE_X": int(os.getenv("CHUNK_SIZE_X", "64")),
-        "CHUNK_SIZE_Y": int(os.getenv("CHUNK_SIZE_Y", "64")),
-        "CHUNK_SIZE_Z": int(os.getenv("CHUNK_SIZE_Z", "32")),
     }
 
     return config
@@ -99,42 +87,38 @@ def load_env_config():
 config = load_env_config()
 
 # Extract configuration variables for backward compatibility
-USE_GCS_BUCKET = config["USE_GCS_BUCKET"]
-GCS_BUCKET_NAME = config["GCS_BUCKET_NAME"]
-GCS_PREFIX = config["GCS_PREFIX"]
-GCS_FILE_EXTENSION = config["GCS_FILE_EXTENSION"]
-USE_GCS_OUTPUT = config["USE_GCS_OUTPUT"]
-GCS_OUTPUT_BUCKET_NAME = config["GCS_OUTPUT_BUCKET_NAME"]
-GCS_OUTPUT_PREFIX = config["GCS_OUTPUT_PREFIX"]
-INPUTFOLDER = config["INPUTFOLDER"]
-OUTPUT_PATH = config["OUTPUT_PATH"]
-OVERWRITE = config["OVERWRITE"]
-NUM_MIPS = config["NUM_MIPS"]
-MIP_CUTOFF = config["MIP_CUTOFF"]
-CHANNEL_LIMIT = config["CHANNEL_LIMIT"]
-NUM_ROWS = config["NUM_ROWS"]
-NUM_COLS = config["NUM_COLS"]
-ALLOW_NON_ALIGNED_WRITE = config["ALLOW_NON_ALIGNED_WRITE"]
+use_gcs_bucket = config["USE_GCS_BUCKET"]
+gcs_bucket_name = config["GCS_BUCKET_NAME"]
+gcs_input_path = config["GCS_PREFIX"]
+gcs_file_ext = config["GCS_FILE_EXTENSION"]
+use_gcs_output = config["USE_GCS_OUTPUT"]
+gcs_output_bucket_name = config["GCS_OUTPUT_BUCKET_NAME"]
+gcs_output_path = config["GCS_OUTPUT_PREFIX"]
+input_path = config["INPUT_PATH"]
+output_path = config["OUTPUT_PATH"]
+overwrite_output = config["OVERWRITE"]
+num_mips = config["NUM_MIPS"]
+mip_cutoff = config["MIP_CUTOFF"]
+channel_limit = config["CHANNEL_LIMIT"]
+allow_non_aligned_write = config["ALLOW_NON_ALIGNED_WRITE"]
 
 # Print loaded configuration for verification
 print("Configuration loaded:")
-print(f"  Data source: {'GCS Bucket' if USE_GCS_BUCKET else 'Local files'}")
-if USE_GCS_BUCKET:
-    print(f"  GCS Bucket: {GCS_BUCKET_NAME}")
-    print(f"  GCS Prefix: {GCS_PREFIX}")
+print(f"  Data source: {'GCS Bucket' if use_gcs_bucket else 'Local files'}")
+if use_gcs_bucket:
+    print(f"  GCS Bucket: {gcs_bucket_name}")
+    print(f"  GCS Prefix: {gcs_input_path}")
 else:
-    print(f"  Input folder: {INPUTFOLDER}")
-print(f"  Output path: {OUTPUT_PATH}")
-print(f"  Output to GCS: {'Yes' if USE_GCS_OUTPUT else 'No'}")
-if USE_GCS_OUTPUT:
-    print(f"  Output GCS Bucket: {GCS_OUTPUT_BUCKET_NAME}")
-    print(f"  Output GCS Prefix: {GCS_OUTPUT_PREFIX}")
-print(
-    f"  Processing: {NUM_MIPS} mips, {CHANNEL_LIMIT} channels, {NUM_ROWS}x{NUM_COLS} grid"
-)
+    print(f"  Input folder: {input_path}")
+print(f"  Output path: {output_path}")
+print(f"  Output to GCS: {'Yes' if use_gcs_output else 'No'}")
+if use_gcs_output:
+    print(f"  Output GCS Bucket: {gcs_output_bucket_name}")
+    print(f"  Output GCS Prefix: {gcs_output_path}")
+print(f"  Processing: {num_mips} mips, max {channel_limit} channels")
 
-# %% Load the data
-OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
+# %% Load the list of files to process
+output_path.mkdir(exist_ok=True, parents=True)
 
 
 def list_gcs_files(bucket_name, prefix="", file_extension=""):
@@ -172,11 +156,11 @@ def get_file_list():
     Returns:
         List of file paths (GCS blob names or local Path objects)
     """
-    if USE_GCS_BUCKET:
-        files = list_gcs_files(GCS_BUCKET_NAME, GCS_PREFIX, GCS_FILE_EXTENSION)
+    if use_gcs_bucket:
+        files = list_gcs_files(gcs_bucket_name, gcs_input_path, gcs_file_ext)
     else:
         # Use local filesystem glob as before
-        files = list(INPUTFOLDER.glob(f"**/*{GCS_FILE_EXTENSION}"))
+        files = list(input_path.glob(f"**/*{gcs_file_ext}"))
     print(f"Total files found: {len(files)}")
     return sorted(files)
 
@@ -184,12 +168,19 @@ def get_file_list():
 # Get the list of available files
 all_files = get_file_list()
 
+# Write the files out to a text file for reference
+with open(output_path / "file_list.txt", "w") as f:
+    for filepath in all_files:
+        f.write(f"{filepath}\n")
+
+
+# %% Determine grid dimensions from files
+
 
 def extract_row_col_from_filename(filename):
     """
     Extract row and column information from filename.
     Assumes filenames contain row/col info in a pattern like 'r{row}c{col}' or '{row}_{col}'.
-    This function should be customized based on your actual filename pattern.
 
     Args:
         filename: The filename to parse
@@ -209,9 +200,7 @@ def extract_row_col_from_filename(filename):
     if match:
         return int(match.group(1)), int(match.group(2))
 
-    # Try pattern where position in sorted list determines row/col
-    # This is a fallback - assumes files are sorted in row-major order
-    return None, None
+    raise ValueError(f"Could not extract row/col from filename: {filename_str}")
 
 
 def compute_grid_dimensions(file_list):
@@ -225,89 +214,25 @@ def compute_grid_dimensions(file_list):
         tuple: (num_rows, num_cols)
     """
     if not file_list:
-        return 0, 0
+        raise ValueError("File list is empty, cannot compute grid dimensions.")
 
-    rows_found = set()
-    cols_found = set()
-
+    max_row = -1
+    max_col = -1
     for filepath in file_list:
         row, col = extract_row_col_from_filename(filepath)
-        if row is not None and col is not None:
-            rows_found.add(row)
-            cols_found.add(col)
+        max_row = max(max_row, row)
+        max_col = max(max_col, col)
 
-    if rows_found and cols_found:
-        num_rows = max(rows_found) + 1  # Assuming 0-indexed
-        num_cols = max(cols_found) + 1  # Assuming 0-indexed
-        print(
-            f"Detected grid dimensions from filenames: {num_rows} rows × {num_cols} columns"
-        )
-        return num_rows, num_cols
-    else:
-        # Fallback: try to infer from total number of files
-        total_files = len(file_list)
-        # Try to find a reasonable rectangular arrangement
-        import math
-
-        num_cols = int(math.sqrt(total_files))
-        num_rows = math.ceil(total_files / num_cols)
-        print(
-            f"Could not detect grid dimensions from filenames. Using fallback: {num_rows} rows × {num_cols} columns for {total_files} files"
-        )
-        return num_rows, num_cols
+    return max_row + 1, max_col + 1  # Convert from max index to count
 
 
 # Compute actual grid dimensions from files
-COMPUTED_NUM_ROWS, COMPUTED_NUM_COLS = compute_grid_dimensions(all_files)
+computed_num_rows, computed_num_cols = compute_grid_dimensions(all_files)
+print(
+    f"Using computed grid dimensions: {computed_num_rows} rows x {computed_num_cols} columns"
+)
 
-# Use computed dimensions if they seem reasonable, otherwise fall back to config
-if COMPUTED_NUM_ROWS > 0 and COMPUTED_NUM_COLS > 0:
-    NUM_ROWS = COMPUTED_NUM_ROWS
-    NUM_COLS = COMPUTED_NUM_COLS
-    print(f"Using computed grid dimensions: {NUM_ROWS} rows × {NUM_COLS} columns")
-else:
-    print(f"Using configured grid dimensions: {NUM_ROWS} rows × {NUM_COLS} columns")
-
-# %% File management functions
-#
-# The new file management system provides three main functions:
-#
-# 1. download_file(row, col): Downloads file from GCS/copies from local to cache
-# 2. load_file(row, col): Downloads (if needed) and loads zarr store
-# 3. delete_cached_file(row, col): Removes cached file to save disk space
-#
-# The system automatically handles:
-# - Downloading from GCS bucket or copying from local filesystem
-# - Caching files locally to avoid repeated downloads
-# - Row/column to filename mapping (tries pattern matching first, falls back to index)
-# - Error handling and logging
-#
-# Usage examples:
-# - zarr_store = load_file(0, 1)  # Load file for row 0, column 1
-# - delete_cached_file(0, 1)      # Delete cached file to free space
-
-# %% GCS Output Functions
-#
-# The GCS output system provides functionality to upload processed results to a Google Cloud bucket:
-#
-# 1. sync_info_to_gcs_output(): Uploads CloudVolume info/provenance files after creation
-# 2. upload_chunk_to_gcs(): Uploads individual chunk files to GCS
-# 3. check_and_upload_completed_chunks(): Batch upload of completed chunks
-#
-# Configuration (set in .env file):
-# - USE_GCS_OUTPUT=true: Enable GCS output functionality  
-# - GCS_OUTPUT_BUCKET_NAME: Name of destination GCS bucket
-# - GCS_OUTPUT_PREFIX: Path prefix within bucket (e.g. "processed/dataset1/")
-#
-# The system automatically:
-# - Uploads info files immediately after CloudVolume creation
-# - Periodically uploads chunks during processing to manage disk space
-# - Performs final upload of any remaining chunks at completion
-#
-# Benefits:
-# - Manages local disk space by uploading completed chunks
-# - Provides distributed access to processed datasets
-# - Enables incremental processing across multiple machines
+# %% GCS Output Functions and loading data functions
 
 
 def get_local_cache_path(row, col):
@@ -321,8 +246,6 @@ def get_local_cache_path(row, col):
     Returns:
         Path: Local cache path for the file
     """
-    cache_dir = OUTPUT_PATH / "cache"
-    cache_dir.mkdir(exist_ok=True, parents=True)
 
     # Get the remote file path/name for this row/col
     remote_file = get_remote_file_path(row, col)
@@ -330,14 +253,16 @@ def get_local_cache_path(row, col):
         return None
 
     # Create local filename based on remote file
-    if USE_GCS_BUCKET:
+    if use_gcs_bucket:
+        cache_dir = input_path / "cache"
+        cache_dir.mkdir(exist_ok=True, parents=True)
         # For GCS files, use the blob name but replace slashes with underscores
         local_name = str(remote_file).replace("/", "_").replace("\\", "_")
+        output = cache_dir / local_name
     else:
-        # For local files, just use the filename
-        local_name = Path(remote_file).name
+        output = Path(remote_file)
 
-    return cache_dir / local_name
+    return output
 
 
 def get_remote_file_path(row, col):
@@ -351,9 +276,9 @@ def get_remote_file_path(row, col):
     Returns:
         str or Path: Remote file path, or None if not found
     """
-    if row < 0 or row >= NUM_ROWS or col < 0 or col >= NUM_COLS:
+    if row < 0 or row >= computed_num_rows or col < 0 or col >= computed_num_cols:
         raise ValueError(
-            f"Row and column indices must be within the defined grid (0-{NUM_ROWS-1}, 0-{NUM_COLS-1})."
+            f"Row and column indices must be within the defined grid (0-{computed_num_rows-1}, 0-{computed_num_cols-1})."
         )
 
     # Try to find file by row/col pattern first
@@ -361,11 +286,6 @@ def get_remote_file_path(row, col):
         file_row, file_col = extract_row_col_from_filename(filepath)
         if file_row == row and file_col == col:
             return filepath
-
-    # Fallback: use index-based access (assumes row-major order)
-    index = row * NUM_COLS + col
-    if index < len(all_files):
-        return all_files[index]
 
     return None
 
@@ -395,11 +315,11 @@ def download_file(row, col):
         print(f"File already cached: {local_path}")
         return local_path
 
-    if USE_GCS_BUCKET:
+    if use_gcs_bucket:
         # Download from GCS
         try:
             client = storage.Client()
-            bucket = client.bucket(GCS_BUCKET_NAME)
+            bucket = client.bucket(gcs_bucket_name)
             blob = bucket.blob(remote_file)
 
             print(f"Downloading {remote_file} to {local_path}")
@@ -409,16 +329,7 @@ def download_file(row, col):
         except Exception as e:
             print(f"Error downloading {remote_file}: {e}")
             return None
-    else:
-        # Copy from local filesystem
-        try:
-            print(f"Copying {remote_file} to {local_path}")
-            shutil.copy2(remote_file, local_path)
-            print(f"Copied successfully: {local_path}")
-            return local_path
-        except Exception as e:
-            print(f"Error copying {remote_file}: {e}")
-            return None
+    return remote_file  # For local files, just return the path
 
 
 def load_file(row, col):
@@ -457,6 +368,8 @@ def delete_cached_file(row, col):
     Returns:
         bool: True if file was deleted or didn't exist, False if error
     """
+    if not use_gcs_bucket:
+        return True
     local_path = get_local_cache_path(row, col)
     if local_path is None:
         return True
@@ -471,85 +384,42 @@ def delete_cached_file(row, col):
         return False
 
 
-# Backward compatibility function that uses the new structure
-def get_file_for_row_col(row, col):
-    """
-    Get the file path for a specific row and column.
-    This is kept for backward compatibility, but the new approach is to use
-    load_file() which handles download automatically.
-    """
-    return get_remote_file_path(row, col)
-
-
 def sync_info_to_gcs_output():
     """
     Sync the CloudVolume info file to the GCS output bucket.
     This uploads the info file so the bucket is ready to receive the rest of the data.
     """
-    if not USE_GCS_OUTPUT:
-        print("GCS output not enabled, skipping info sync")
-        return True
-        
-    print(f"Syncing info file to GCS output bucket: {GCS_OUTPUT_BUCKET_NAME}")
-    
-    try:
-        client = storage.Client()
-        bucket = client.bucket(GCS_OUTPUT_BUCKET_NAME)
-        
-        # The local info file path
-        local_info_path = OUTPUT_PATH / "info"
-        
-        if not local_info_path.exists():
-            print(f"Warning: Local info file not found at {local_info_path}")
-            return False
-        
-        # The GCS destination path for the info file
-        gcs_info_path = GCS_OUTPUT_PREFIX.rstrip('/') + '/info'
-        
-        # Upload the info file
-        blob = bucket.blob(gcs_info_path)
-        blob.upload_from_filename(str(local_info_path))
-        print(f"Uploaded info file to gs://{GCS_OUTPUT_BUCKET_NAME}/{gcs_info_path}")
-        
-        # Also upload provenance if it exists
-        local_provenance_path = OUTPUT_PATH / "provenance"
-        if local_provenance_path.exists():
-            gcs_provenance_path = GCS_OUTPUT_PREFIX.rstrip('/') + '/provenance'
-            provenance_blob = bucket.blob(gcs_provenance_path)
-            provenance_blob.upload_from_filename(str(local_provenance_path))
-            print(f"Uploaded provenance file to gs://{GCS_OUTPUT_BUCKET_NAME}/{gcs_provenance_path}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error syncing info to GCS output bucket: {e}")
-        return False
+    local_info_path = output_path / "info"
+    gcs_info_path = gcs_output_path.rstrip("/") + "/info"
+    upload_file_to_gcs(local_info_path, gcs_info_path)
 
-def upload_chunk_to_gcs(local_chunk_path, gcs_chunk_path):
+
+def upload_file_to_gcs(local_file_path, gcs_file_path):
     """
     Upload a single chunk file to the GCS output bucket.
-    
+
     Args:
         local_chunk_path: Path to local chunk file
         gcs_chunk_path: GCS blob path for the chunk
-        
+
     Returns:
         bool: True if successful, False otherwise
     """
-    if not USE_GCS_OUTPUT:
+    if not use_gcs_output:
+        print("GCS output not configured, skipping upload.")
         return True
-        
+
     try:
         client = storage.Client()
-        bucket = client.bucket(GCS_OUTPUT_BUCKET_NAME)
-        
-        blob = bucket.blob(gcs_chunk_path)
-        blob.upload_from_filename(str(local_chunk_path))
-        
+        bucket = client.bucket(gcs_output_bucket_name)
+
+        blob = bucket.blob(gcs_file_path)
+        blob.upload_from_filename(str(local_file_path))
+
         return True
-        
+
     except Exception as e:
-        print(f"Error uploading chunk {local_chunk_path} to GCS: {e}")
+        print(f"Error uploading chunk {local_file_path} to GCS: {e}")
         return False
 
 
@@ -557,42 +427,46 @@ def check_and_upload_completed_chunks():
     """
     Check for completed chunk files and upload them to GCS if configured.
     This helps manage local disk space by uploading and optionally removing completed chunks.
-    
+
     Returns:
         int: Number of chunks uploaded
     """
-    if not USE_GCS_OUTPUT:
+    if not use_gcs_output:
         return 0
-        
+
     uploaded_count = 0
-    
+
     try:
         # Look for chunk files in the output directory
-        for mip_level in range(NUM_MIPS):
-            mip_dir = OUTPUT_PATH / str(mip_level)
+        for mip_level in range(num_mips):
+            mip_dir = output_path / str(mip_level)
             if mip_dir.exists():
                 # Find all chunk files in this mip level
-                for chunk_file in mip_dir.glob('**/*'):
+                for chunk_file in mip_dir.glob("**/*"):
                     if chunk_file.is_file():
                         # Construct the GCS path for this chunk
-                        relative_path = chunk_file.relative_to(OUTPUT_PATH)
-                        gcs_chunk_path = GCS_OUTPUT_PREFIX.rstrip('/') + '/' + str(relative_path).replace('\\', '/')
-                        
+                        relative_path = chunk_file.relative_to(output_path)
+                        gcs_chunk_path = (
+                            gcs_output_path.rstrip("/")
+                            + "/"
+                            + str(relative_path).replace("\\", "/")
+                        )
+
                         # Check if chunk should be uploaded (you can add more logic here)
-                        if upload_chunk_to_gcs(chunk_file, gcs_chunk_path):
+                        if upload_file_to_gcs(chunk_file, gcs_chunk_path):
                             uploaded_count += 1
                             print(f"Uploaded chunk: {gcs_chunk_path}")
-                            
+
                             # Optionally remove local chunk to save space
                             # Uncomment the next line if you want to delete local chunks after upload
                             # chunk_file.unlink()
-        
+
         if uploaded_count > 0:
             print(f"Uploaded {uploaded_count} chunks to GCS output bucket")
-            
+
     except Exception as e:
         print(f"Error checking/uploading chunks: {e}")
-    
+
     return uploaded_count
 
 
@@ -608,7 +482,6 @@ def load_zarr_store(file_path):
 def load_data_from_zarr_store(zarr_store):
     # Input is in Z, T, C, Y, X order
 
-    num_channels = min(zarr_store.shape[2], CHANNEL_LIMIT)
     data = zarr_store[
         :,  # T
         :,  # Z
@@ -625,6 +498,8 @@ def load_data_from_zarr_store(zarr_store):
     return data
 
 
+# %% Inspect the first file to determine data properties - for now we assume all files are the same shape
+
 # Load the first file to inspect data shape and properties
 print("Loading first file for data inspection...")
 zarr_store = load_file(0, 0)  # Load file at row 0, col 0
@@ -637,9 +512,6 @@ shape = zarr_store.shape
 # Input is in Z, T, C, Y, X order
 # Want XYTCZ order
 single_file_xyz_shape = [shape[4], shape[3], shape[1]]
-size_x = config["SIZE_X"]
-size_y = config["SIZE_Y"]
-size_z = config["SIZE_Z"]
 # Here, T and Z are kind of transferrable.
 # The reason is because the z dimension in neuroglancer is the time dimension
 # from the raw original data.
@@ -647,118 +519,72 @@ size_z = config["SIZE_Z"]
 # It's a bit unusual that t is being used as the z dimension,
 # but otherwise you can't do volume rendering in neuroglancer.
 
-num_channels = min(shape[2], CHANNEL_LIMIT)  # Limit to NUM_CHANNELS for memory usage
+num_channels = min(shape[2], channel_limit)  # Limit to NUM_CHANNELS for memory usage
 data_type = "uint16"
+
+# %% Compute optimal chunk size based on data shape and MIP levels
+
 
 def compute_optimal_chunk_size(single_file_shape, num_mips, max_chunk_size=None):
     """
     Compute optimal chunk size based on single file shape and number of MIP levels.
-    
-    The goal is to choose chunk sizes that:
-    1. Divide evenly into the data dimensions at all MIP levels
-    2. Are powers of 2 for optimal octree alignment
-    3. Are reasonable in terms of memory usage
-    4. Work well with the downsampling structure
-    
+
     Args:
         single_file_shape: [x, y, z] shape of a single file
         num_mips: Number of MIP levels
         max_chunk_size: Optional maximum chunk size (default: 512)
-        
+
     Returns:
         List[int]: [chunk_x, chunk_y, chunk_z] optimal chunk sizes
     """
     if max_chunk_size is None:
         max_chunk_size = 512
-    
-    optimal_chunks = []
-    
-    for dim_size in single_file_shape:
-        # Find the largest power of 2 that:
-        # 1. Is <= max_chunk_size
-        # 2. Divides reasonably into the dimension size
-        # 3. Works well across all MIP levels
-        
-        # Start with powers of 2 up to max_chunk_size
-        candidate_chunks = []
-        power = 1
-        while power <= max_chunk_size:
-            candidate_chunks.append(power)
-            power *= 2
-        
-        # Score each candidate based on how well it divides the data
-        best_chunk = candidate_chunks[0]
-        best_score = float('inf')
-        
-        for chunk_size in candidate_chunks:
-            # Score based on how well it divides across MIP levels
-            score = 0
-            
-            for mip in range(num_mips):
-                # At each MIP level, data is downsampled by 2^mip
-                effective_dim_size = dim_size // (2 ** mip)
-                if effective_dim_size > 0:
-                    # Prefer chunk sizes that divide evenly
-                    remainder = effective_dim_size % chunk_size
-                    score += remainder ** 2  # Penalize remainders quadratically
-                    
-                    # Also prefer chunk sizes that don't create too many tiny chunks
-                    num_chunks = math.ceil(effective_dim_size / chunk_size)
-                    if num_chunks > 0:
-                        avg_chunk_fill = effective_dim_size / (num_chunks * chunk_size)
-                        score += (1 - avg_chunk_fill) ** 2 * 100  # Penalize poor utilization
-            
-            # Additional penalty for very small chunks
-            if chunk_size < 32:
-                score += 1000
-            
-            if score < best_score:
-                best_score = score
-                best_chunk = chunk_size
-        
-        optimal_chunks.append(best_chunk)
-    
-    return optimal_chunks
+
+    single_file_shape = np.array(single_file_shape)
+    optimal_chunks = np.ceil(single_file_shape / (2 ** (num_mips - 1)))
+
+    return [int(c) for c in optimal_chunks]
+
 
 # Compute optimal chunk size based on single file shape and MIP levels
-print(f"Computing optimal chunk size for shape {single_file_xyz_shape} with {NUM_MIPS} MIP levels...")
-computed_chunk_size = compute_optimal_chunk_size(single_file_xyz_shape, NUM_MIPS)
-
-# Allow override from config, but show the computed recommendation
-config_chunk_size = [
-    config["CHUNK_SIZE_X"],
-    config["CHUNK_SIZE_Y"],
-    config["CHUNK_SIZE_Z"],
-]
+print(
+    f"Computing optimal chunk size for shape {single_file_xyz_shape} with {num_mips} MIP levels..."
+)
+computed_chunk_size = compute_optimal_chunk_size(single_file_xyz_shape, num_mips)
+# computed_chunk_size = [64, 64, 32] # Override here if needed
 
 print(f"Computed optimal chunk size: {computed_chunk_size}")
-print(f"Config chunk size: {config_chunk_size}")
+chunk_size = computed_chunk_size
 
-# Use computed chunk size, but allow config override if set to non-default values
-use_computed = True
-default_chunk = [64, 64, 32]  # Default values from .env.example
-if config_chunk_size != default_chunk:
-    print("Using chunk size from configuration (non-default values detected)")
-    chunk_size = config_chunk_size
-    use_computed = False
-else:
-    print("Using computed optimal chunk size")
-    chunk_size = computed_chunk_size
-
-print(f"Final chunk size: {chunk_size}")
+volume_size = [
+    single_file_xyz_shape[0] * computed_num_rows,
+    single_file_xyz_shape[1] * computed_num_cols,
+    single_file_xyz_shape[2],
+]  # XYZ (T)
+print("Volume size:", volume_size)
 
 # Validate chunk size works with the data
-for i, (dim_name, dim_size, chunk_dim) in enumerate(zip(['X', 'Y', 'Z'], single_file_xyz_shape, chunk_size)):
+for i, (dim_name, dim_size, chunk_dim) in enumerate(
+    zip(["X", "Y", "Z"], volume_size, chunk_size)
+):
     num_chunks_this_dim = math.ceil(dim_size / chunk_dim)
-    print(f"  {dim_name} dimension: {dim_size} → {num_chunks_this_dim} chunks of size {chunk_dim}")
-    
+    print(
+        f"  {dim_name} dimension: {dim_size} → {num_chunks_this_dim} chunks of size {chunk_dim}"
+    )
+
     # Check how this works across MIP levels
-    for mip in range(min(3, NUM_MIPS)):  # Show first few MIP levels
-        effective_size = dim_size // (2 ** mip)
+    for mip in range(num_mips):  # Show first few MIP levels
+        effective_size = dim_size // (2**mip)
         if effective_size > 0:
             mip_chunks = math.ceil(effective_size / chunk_dim)
-            utilization = (effective_size / (mip_chunks * chunk_dim)) * 100 if mip_chunks > 0 else 0
-            print(f"    MIP {mip}: {effective_size} → {mip_chunks} chunks ({utilization:.1f}% utilization)")
+            utilization = (
+                (effective_size / (mip_chunks * chunk_dim)) * 100
+                if mip_chunks > 0
+                else 0
+            )
+            print(
+                f"    MIP {mip}: {effective_size} → {mip_chunks} chunks ({utilization:.1f}% utilization)"
+            )
 # The chunk size remains fixed across all mips, but at higher mips
 # the data will be downsampled, so the effective chunk size will be larger.
 # Because we use precomputed data format, every chunk has to have all channels included.
@@ -768,31 +594,24 @@ for i, (dim_name, dim_size, chunk_dim) in enumerate(zip(['X', 'Y', 'Z'], single_
 # - Octree alignment (powers of 2 work best)
 # - Downsampling efficiency (should divide well at all MIP levels)
 
-volume_size = [
-    single_file_xyz_shape[0] * NUM_ROWS,
-    single_file_xyz_shape[1] * NUM_COLS,
-    single_file_xyz_shape[2],
-]  # XYZ (T)
-print("Volume size:", volume_size)
-
 # %% Setup the cloudvolume info
 info = CloudVolume.create_new_info(
     num_channels=num_channels,
     layer_type="image",
     data_type=data_type,
     encoding="raw",
-    resolution=[size_x, size_y, size_z],
+    resolution=[1, 1, 1],
     voxel_offset=[0, 0, 0],
     chunk_size=chunk_size,
     volume_size=volume_size,
-    max_mip=NUM_MIPS - 1,
+    max_mip=num_mips - 1,
     factor=Vec(2, 2, 2),
 )
 vol = CloudVolume(
-    "file://" + str(OUTPUT_PATH),
+    "file://" + str(output_path),
     info=info,
     mip=0,
-    non_aligned_writes=ALLOW_NON_ALIGNED_WRITE,
+    non_aligned_writes=allow_non_aligned_write,
     fill_missing=True,
 )
 vol.commit_info()
@@ -807,24 +626,20 @@ del vol
 # %% Create the volumes for each mip level and hold progress
 vols = [
     CloudVolume(
-        "file://" + str(OUTPUT_PATH),
+        "file://" + str(output_path),
         mip=i,
         compress=False,
-        non_aligned_writes=ALLOW_NON_ALIGNED_WRITE,
+        non_aligned_writes=allow_non_aligned_write,
         fill_missing=True,
     )
-    for i in range(NUM_MIPS)
+    for i in range(num_mips)
 ]
-progress_dir = OUTPUT_PATH / "progress"
+progress_dir = output_path / "progress"
 progress_dir.mkdir(exist_ok=True)
-
-# Info file synced to GCS output bucket (if configured)
-# The sync_info_to_gcs_output() function above handles uploading the info and provenance files
-# to the configured GCS output bucket so it's ready to receive chunk data.
 
 # %% Functions for moving data
 shape = volume_size
-chunk_shape = np.array([1500, 936, 687])  # this is for reading data
+chunk_shape = np.array(single_file_xyz_shape)  # this is for reading data
 num_chunks_per_dim = np.ceil(shape / chunk_shape).astype(int)
 
 
@@ -847,13 +662,13 @@ def process(args):
     ]
     f_name = progress_dir / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}.done"
     print(f"Processing chunk: {start} to {end}, file: {f_name}")
-    if f_name.exists() and not OVERWRITE:
+    if f_name.exists() and not overwrite_output:
         return
 
     rawdata = load_data_from_zarr_store(loaded_zarr_store)
 
     # Process all mip levels
-    for mip_level in reversed(range(MIP_CUTOFF, NUM_MIPS)):
+    for mip_level in reversed(range(mip_cutoff, num_mips)):
         if mip_level == 0:
             downsampled = rawdata
             ds_start = start
@@ -862,11 +677,23 @@ def process(args):
             factor = 2**mip_level
             factor_tuple = (factor, factor, factor, 1)
             ds_start = [int(np.round(s / (2**mip_level))) for s in start]
+            # Actually make ds_start to be a multiple of chunk size
+            old_start = ds_start.copy()
+            ds_start = [int(np.round(s / c) * c) for s, c in zip(ds_start, chunk_shape)]
+            if ds_start != old_start:
+                print(f"Adjusted ds_start from {old_start} to {ds_start}")
             bounds_from_end = [int(math.ceil(e / (2**mip_level))) for e in end]
             downsample_shape = [
                 int(math.ceil(s / f)) for s, f in zip(rawdata.shape, factor_tuple)
             ]
             ds_end_est = [s + d for s, d in zip(ds_start, downsample_shape)]
+            # Actually make ds_end_est to be a multiple of chunk size
+            old_end = ds_end_est.copy()
+            ds_end_est = [
+                int(np.round(e / c) * c) for e, c in zip(ds_end_est, chunk_shape)
+            ]
+            if ds_end_est != old_end:
+                print(f"Adjusted ds_end_est from {old_end} to {ds_end_est}")
             ds_end = [max(e1, e2) for e1, e2 in zip(ds_end_est, bounds_from_end)]
             print("DS fill", ds_start, ds_end)
             downsampled = downsample_with_averaging(rawdata, factor_tuple)
@@ -917,23 +744,23 @@ chunk_count = 0
 for coord in reversed_coords:
     process(coord)
     chunk_count += 1
-    
+
     # Periodically check and upload completed chunks to save disk space
     # This is done every 10 chunks to balance upload frequency vs overhead
-    if USE_GCS_OUTPUT and chunk_count % 10 == 0:
+    if use_gcs_output and chunk_count % 10 == 0:
         print(f"Processed {chunk_count} chunks, checking for uploads...")
         check_and_upload_completed_chunks()
-    
+
     # The original TODO was about uploading chunks as they're completed
     # The above implementation provides a basic version of this functionality
     # For more sophisticated chunk management, you could:
     # 1. Track which specific chunks are complete across all MIP levels
-    # 2. Only upload chunks that are fully written at all relevant MIP levels  
+    # 2. Only upload chunks that are fully written at all relevant MIP levels
     # 3. Implement more granular deletion of local chunks after successful upload
     # 4. Add retry logic for failed uploads
 
 # Final upload of any remaining chunks
-if USE_GCS_OUTPUT:
+if use_gcs_output:
     print("Processing complete, uploading any remaining chunks...")
     final_upload_count = check_and_upload_completed_chunks()
     print(f"Final upload completed: {final_upload_count} chunks uploaded")
