@@ -413,9 +413,6 @@ def upload_file_to_gcs(local_file_path, gcs_file_path):
         bool: True if successful, False otherwise
     """
     if not use_gcs_output:
-        print(
-            f"GCS output not configured, skipping upload of {local_file_path} to {gcs_file_path}."
-        )
         return True
 
     try:
@@ -755,6 +752,7 @@ reversed_coords.reverse()
 # %% Function to check the output directory for completed chunks and upload them to GCS
 
 processed_chunks_bounds = None
+uploaded_files = []
 
 
 # TODO this probably wants to bulk together uploads to reduce overhead
@@ -810,10 +808,10 @@ def check_and_upload_completed_chunks():
                 )
                 if upload_file_to_gcs(chunk_file, gcs_chunk_path):
                     uploaded_count += 1
-                    print(f"Uploaded chunk: {gcs_chunk_path}")
                     # Remove local chunk to save space
                     if use_gcs_output:
                         chunk_file.unlink()
+                    uploaded_files.append((chunk_file, gcs_chunk_path))
 
     return uploaded_count
 
@@ -842,9 +840,10 @@ def upload_any_remaining_chunks():
             )
             if upload_file_to_gcs(chunk_file, gcs_chunk_path):
                 uploaded_count += 1
-                print(f"Uploaded chunk: {gcs_chunk_path}")
                 # Remove local chunk to save space
-                chunk_file.unlink()
+                if use_gcs_output:
+                    chunk_file.unlink()
+                uploaded_files.append((chunk_file, gcs_chunk_path))
 
     return uploaded_count
 
@@ -878,6 +877,6 @@ if use_gcs_output:
     print(f"Final upload completed: {total_uploaded_files} chunks uploaded")
 
 # %% Serve the dataset to be used in neuroglancer
-vols[0].viewer(port=1337)
+# vols[0].viewer(port=1337)
 
 # %%
