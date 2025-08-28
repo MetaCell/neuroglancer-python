@@ -749,6 +749,60 @@ reversed_coords.reverse()
 # with ProcessPoolExecutor(max_workers=max_workers) as executor:
 #     executor.map(process, coords)
 
+# %% Function to check if a chunk is fully covered by processed bounds
+
+
+def is_chunk_fully_covered(chunk_bounds, processed_chunks_bounds):
+    """
+    Check if a chunk is fully covered by processed bounds.
+
+    Args:
+        chunk_bounds: [start_coord, end_coord] where each coord is [x, y, z]
+        processed_chunks_bounds: List of tuples (start, end) where start and end are [x, y, z]
+
+    Returns:
+        bool: True if all 8 corners of the chunk are covered by processed bounds
+    """
+    if not processed_chunks_bounds:
+        return False
+
+    start_coord, end_coord = chunk_bounds
+    x0, y0, z0 = start_coord
+    x1, y1, z1 = end_coord
+
+    # Generate all 8 corners of the chunk
+    corners = [
+        [x0, y0, z0],  # min corner
+        [x1, y0, z0],
+        [x0, y1, z0],
+        [x0, y0, z1],
+        [x1, y1, z0],
+        [x1, y0, z1],
+        [x0, y1, z1],
+        [x1, y1, z1],  # max corner
+    ]
+
+    # Check if each corner is covered by at least one processed bound
+    for corner in corners:
+        corner_covered = False
+        for start, end in processed_chunks_bounds:
+            # Check if corner is inside this processed bound
+            if (
+                start[0] <= corner[0] < end[0]
+                and start[1] <= corner[1] < end[1]
+                and start[2] <= corner[2] < end[2]
+            ):
+                corner_covered = True
+                break
+
+        # If any corner is not covered, the chunk is not fully covered
+        if not corner_covered:
+            return False
+
+    # All corners are covered
+    return True
+
+
 # %% Function to check the output directory for completed chunks and upload them to GCS
 
 processed_chunks_bounds = []
@@ -791,10 +845,11 @@ def check_and_upload_completed_chunks():
             chunk_bounds[1] = [
                 min(cb, vs) for cb, vs in zip(chunk_bounds[1], volume_size)
             ]
+            # Subtract 1 from the end bounds to make them inclusive
+            chunk_bounds[1] = [cb - 1 for cb in chunk_bounds[1]]
             # 2. Check if the chunk is fully covered by the processed bounds
-            # TODO actually do this check
-            covered = True
-            
+            covered = is_chunk_fully_covered(chunk_bounds, processed_chunks_bounds)
+
             if covered:
                 # 3. If it is, upload it to GCS
                 relative_path = chunk_file.relative_to(output_path)
@@ -829,6 +884,8 @@ def upload_any_remaining_chunks():
         output_path_for_mip = output_path / dir_name
         # For each file in the output dir
         for chunk_file in output_path_for_mip.glob("**/*"):
+            if chunk_file in [uf[0] for uf in uploaded_files]:
+                continue
             relative_path = chunk_file.relative_to(output_path)
             gcs_chunk_path = (
                 gcs_output_path.rstrip("/")
@@ -857,12 +914,20 @@ for coord in reversed_coords:
     total_uploaded_files += check_and_upload_completed_chunks()
     print(f"Total uploaded chunks so far: {total_uploaded_files}")
 
+# Write files that were written before that final upload check
+with open(output_path / "processed_chunks.txt", "w") as f:
+    for local_path, gcs_path in uploaded_files:
+        f.write(f"{local_path} -> {gcs_path}\n")
 
-# Final upload of any remaining chunks
-if use_gcs_output:
-    print("Processing complete, uploading any remaining chunks...")
-    total_uploaded_files += upload_any_remaining_chunks()
-    print(f"Final upload completed: {total_uploaded_files} chunks uploaded")
+# Final upload of any remaining chunks - hopefully should be none here, but maybe some failed
+print("Processing complete, uploading any remaining chunks...")
+total_uploaded_files += upload_any_remaining_chunks()
+print(f"Final upload completed: {total_uploaded_files} chunks uploaded")
+
+# Write the list of uploaded files to a text file for reference
+with open(output_path / "uploaded_files.txt", "w") as f:
+    for local_path, gcs_path in uploaded_files:
+        f.write(f"{local_path} -> {gcs_path}\n")
 
 # %% Serve the dataset to be used in neuroglancer
 # vols[0].viewer(port=1337)
