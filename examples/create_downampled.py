@@ -639,7 +639,7 @@ def process(args):
     f_name = progress_dir / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}.done"
     print(f"Processing chunk: {start} to {end}, file: {f_name}")
     if f_name.exists() and not overwrite_output:
-        return
+        return (start, end)
 
     rawdata = load_data_from_zarr_store(loaded_zarr_store)
 
@@ -754,7 +754,7 @@ reversed_coords.reverse()
 
 # %% Function to check the output directory for completed chunks and upload them to GCS
 
-processed_chunks_bounds = [(np.inf, np.inf, np.inf), (-np.inf, -np.inf, -np.inf)]
+processed_chunks_bounds = None
 
 
 # TODO this probably wants to bulk together uploads to reduce overhead
@@ -766,9 +766,6 @@ def check_and_upload_completed_chunks():
     Returns:
         int: Number of chunks uploaded
     """
-    if not use_gcs_output:
-        return 0
-
     uploaded_count = 0
 
     for mip_level in range(num_mips):
@@ -789,6 +786,10 @@ def check_and_upload_completed_chunks():
             chunk_bounds = [
                 [c * factor for c in chunk_bounds[0]],
                 [c * factor for c in chunk_bounds[1]],
+            ]
+            # Clamp the chunk bounds to the volume size
+            chunk_bounds[1] = [
+                min(cb, vs) for cb, vs in zip(chunk_bounds[1], volume_size)
             ]
             # 2. Check if the chunk is fully covered by the processed bounds
             if all(
@@ -811,7 +812,8 @@ def check_and_upload_completed_chunks():
                     uploaded_count += 1
                     print(f"Uploaded chunk: {gcs_chunk_path}")
                     # Remove local chunk to save space
-                    chunk_file.unlink()
+                    if use_gcs_output:
+                        chunk_file.unlink()
 
     return uploaded_count
 
@@ -851,8 +853,10 @@ def upload_any_remaining_chunks():
 total_uploaded_files = 0
 for coord in reversed_coords:
     bounds = process(coord)
-    if bounds is not None:
-        start, end = bounds
+    start, end = bounds
+    if processed_chunks_bounds is None:
+        processed_chunks_bounds = [start, end]
+    else:
         processed_chunks_bounds[0] = [
             min(ps, s) for ps, s in zip(processed_chunks_bounds[0], start)
         ]
