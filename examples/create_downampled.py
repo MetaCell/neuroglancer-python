@@ -78,6 +78,12 @@ def load_env_config():
         "ALLOW_NON_ALIGNED_WRITE": parse_bool(
             os.getenv("ALLOW_NON_ALIGNED_WRITE", "false")
         ),
+        # Process possible comma separated list of integers for manual chunk size
+        "MANUAL_CHUNK_SIZE": (
+            [int(x) for x in str(os.getenv("MANUAL_CHUNK_SIZE", "None")).split(",")]
+            if os.getenv("MANUAL_CHUNK_SIZE", "None").lower() != "none"
+            else None
+        ),
     }
 
     return config
@@ -101,6 +107,7 @@ num_mips = config["NUM_MIPS"]
 mip_cutoff = config["MIP_CUTOFF"]
 channel_limit = config["CHANNEL_LIMIT"]
 allow_non_aligned_write = config["ALLOW_NON_ALIGNED_WRITE"]
+manual_chunk_size = config["MANUAL_CHUNK_SIZE"]
 
 # Print loaded configuration for verification
 print("Configuration loaded:")
@@ -551,10 +558,18 @@ print(
     f"Computing optimal chunk size for shape {single_file_xyz_shape} with {num_mips} MIP levels..."
 )
 computed_chunk_size = compute_optimal_chunk_size(single_file_xyz_shape, num_mips)
-# computed_chunk_size = [64, 64, 32] # Override here if needed
-
-print(f"Computed optimal chunk size: {computed_chunk_size}")
-chunk_size = computed_chunk_size
+if manual_chunk_size is not None:
+    if len(manual_chunk_size) != 3:
+        print(
+            "Error: MANUAL_CHUNK_SIZE must be a list of three integers (e.g., 64,64,16)"
+        )
+        exit(1)
+    print(f"Using manual chunk size from configuration: {manual_chunk_size}")
+    chunk_size = manual_chunk_size
+else:
+    computed_chunk_size = compute_optimal_chunk_size(single_file_xyz_shape, num_mips)
+    print(f"Computed optimal chunk size: {computed_chunk_size}")
+    chunk_size = computed_chunk_size
 
 volume_size = [
     single_file_xyz_shape[0] * computed_num_rows,
