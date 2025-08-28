@@ -72,6 +72,7 @@ def load_env_config():
         "OUTPUT_PATH": Path(os.getenv("OUTPUT_PATH", "/temp/out")),
         # Processing settings
         "OVERWRITE": parse_bool(os.getenv("OVERWRITE", "false")),
+        "OVERWRITE_GCS": parse_bool(os.getenv("OVERWRITE_GCS", "false")),
         "NUM_MIPS": int(os.getenv("NUM_MIPS", "5")),
         "MIP_CUTOFF": int(os.getenv("MIP_CUTOFF", "0")),
         "CHANNEL_LIMIT": int(os.getenv("CHANNEL_LIMIT", "4")),
@@ -103,6 +104,7 @@ gcs_output_path = config["GCS_OUTPUT_PREFIX"]
 input_path = config["INPUT_PATH"]
 output_path = config["OUTPUT_PATH"]
 overwrite_output = config["OVERWRITE"]
+overwrite_gcs = config["OVERWRITE_GCS"]
 num_mips = config["NUM_MIPS"]
 mip_cutoff = config["MIP_CUTOFF"]
 channel_limit = config["CHANNEL_LIMIT"]
@@ -401,13 +403,14 @@ def sync_info_to_gcs_output():
     upload_file_to_gcs(local_info_path, gcs_info_path)
 
 
-def upload_file_to_gcs(local_file_path, gcs_file_path):
+def upload_file_to_gcs(local_file_path, gcs_file_path, overwrite=True):
     """
     Upload a single chunk file to the GCS output bucket.
 
     Args:
-        local_chunk_path: Path to local chunk file
-        gcs_chunk_path: GCS blob path for the chunk
+        local_file_path: Path to local chunk file
+        gcs_file_path: GCS blob path for the chunk
+        overwrite: If False, skip upload if file already exists in GCS
 
     Returns:
         bool: True if successful, False otherwise
@@ -420,6 +423,12 @@ def upload_file_to_gcs(local_file_path, gcs_file_path):
         bucket = client.bucket(gcs_output_bucket_name)
 
         blob = bucket.blob(gcs_file_path)
+        
+        # Check if file already exists and overwrite is False
+        if not overwrite and blob.exists():
+            print(f"File {gcs_file_path} already exists in GCS, skipping upload")
+            return True
+
         blob.upload_from_filename(str(local_file_path))
 
         return True
@@ -858,7 +867,8 @@ def check_and_upload_completed_chunks():
                     + "/"
                     + str(relative_path).replace("\\", "/")
                 )
-                if upload_file_to_gcs(chunk_file, gcs_chunk_path):
+                # Skip re-uploading files that are already uploaded
+                if upload_file_to_gcs(chunk_file, gcs_chunk_path, overwrite=overwrite_gcs):
                     uploaded_count += 1
                     # Remove local chunk to save space
                     if use_gcs_output:
@@ -892,7 +902,7 @@ def upload_any_remaining_chunks():
                 + "/"
                 + str(relative_path).replace("\\", "/")
             )
-            if upload_file_to_gcs(chunk_file, gcs_chunk_path):
+            if upload_file_to_gcs(chunk_file, gcs_chunk_path, overwrite=overwrite_gcs):
                 uploaded_count += 1
                 # Remove local chunk to save space
                 if use_gcs_output:
@@ -930,6 +940,6 @@ with open(output_path / "uploaded_files.txt", "w") as f:
         f.write(f"{local_path} -> {gcs_path}\n")
 
 # %% Serve the dataset to be used in neuroglancer
-# vols[0].viewer(port=1337)
+vols[0].viewer(port=1337)
 
 # %%
