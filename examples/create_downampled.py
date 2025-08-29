@@ -679,14 +679,6 @@ num_chunks_per_dim = np.ceil(volume_shape / single_file_shape).astype(int)
 def process(args):
     x_i, y_i, z_i = args
 
-    # Use the new load_file function that handles download/caching
-    print(f"Loading file for coordinates ({x_i}, {y_i}, {z_i})")
-    loaded_zarr_store = load_file(x_i, y_i)
-
-    if loaded_zarr_store is None:
-        print(f"Warning: Could not load file for row {x_i}, col {y_i}. Skipping...")
-        return
-
     start = [
         x_i * single_file_shape[0],
         y_i * single_file_shape[1],
@@ -701,6 +693,14 @@ def process(args):
     print(f"Processing chunk: {start} to {end}, file: {f_name}")
     if f_name.exists() and not overwrite_output:
         return (start, end)
+
+    # Use the new load_file function that handles download/caching
+    print(f"Loading file for coordinates ({x_i}, {y_i}, {z_i})")
+    loaded_zarr_store = load_file(x_i, y_i)
+
+    if loaded_zarr_store is None:
+        print(f"Warning: Could not load file for row {x_i}, col {y_i}. Skipping...")
+        return
 
     rawdata = load_data_from_zarr_store(loaded_zarr_store)
 
@@ -778,7 +778,6 @@ def process(args):
     touch(f_name)
 
     # Clean up cached file to save disk space
-    # (you can comment this out if you want to keep files cached)
     delete_cached_zarr_file(x_i, y_i)
 
     # Return the bounds of the processed chunk
@@ -791,14 +790,18 @@ process((x_i, y_i, z_i))
 
 
 # %% Loop over all the chunks
+# Can do it in reverse order because the last chunks are most likely to error
+in_reverse = False
 coords = itertools.product(
     range(num_chunks_per_dim[0]),
     range(num_chunks_per_dim[1]),
     range(num_chunks_per_dim[2]),
 )
-# Do it in reverse order because the last chunks are most likely to error
-reversed_coords = list(coords)
-reversed_coords.reverse()
+if in_reverse:
+    iter_coords = list(coords)
+    iter_coords.reverse()
+else:
+    iter_coords = coords
 
 # %% Move the data across with multiple workers
 # TODO because we are using non-aligned writes, we can't use multiple workers
@@ -971,10 +974,15 @@ def upload_any_remaining_chunks():
 
 # %% Move the data across with a single worker
 total_uploaded_files = 0
-for coord in reversed_coords:
+# TEMP early quit for testing
+max_iters = 4
+for coord in iter_coords:
     bounds = process(coord)
     start, end = bounds
     processed_chunks_bounds.append((start, end))
+    if max_iters and len(processed_chunks_bounds) >= max_iters:
+        print("Reached max iterations for testing, stopping early")
+        break
 
     # Periodically check and upload completed chunks to save disk space
     # This is done every 10 chunks to balance upload frequency vs overhead
@@ -986,15 +994,22 @@ with open(output_path / "processed_chunks.txt", "w") as f:
     for local_path, gcs_path in uploaded_files:
         f.write(f"{local_path} -> {gcs_path}\n")
 
-# Final upload of any remaining chunks - hopefully should be none here, but maybe some failed
-print("Processing complete, uploading any remaining chunks...")
-total_uploaded_files += upload_any_remaining_chunks()
-print(f"Final upload completed: {total_uploaded_files} chunks uploaded")
+# %% Final upload of any remaining chunks - hopefully should be none here, but maybe some failed
+# This is not something we always want to run, so puttin an input prompt here just in case
+continue_upload = input(
+    "Do you want to upload any remaining chunks in the output directory to GCS? (y/n): "
+)
+if continue_upload.lower() != "y":
+    print("Skipping final upload of remaining chunks.")
+else:
+    print("Processing complete, uploading any remaining chunks...")
+    total_uploaded_files += upload_any_remaining_chunks()
+    print(f"Final upload completed: {total_uploaded_files} chunks uploaded")
 
-# Write the list of uploaded files to a text file for reference
-with open(output_path / "uploaded_files.txt", "w") as f:
-    for local_path, gcs_path in uploaded_files:
-        f.write(f"{local_path} -> {gcs_path}\n")
+    # Write the list of uploaded files to a text file for reference
+    with open(output_path / "uploaded_files.txt", "w") as f:
+        for local_path, gcs_path in uploaded_files:
+            f.write(f"{local_path} -> {gcs_path}\n")
 
 # %% Serve the dataset to be used in neuroglancer
 vols[0].viewer(port=1337)
