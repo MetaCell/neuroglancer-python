@@ -2,6 +2,7 @@
 
 import itertools
 import math
+import subprocess
 from pathlib import Path
 import numpy as np
 from cloudvolume import CloudVolume
@@ -72,6 +73,8 @@ def load_env_config():
         # Local paths (used when USE_GCS_BUCKET is False)
         "INPUT_PATH": Path(os.getenv("INPUT_PATH", "/temp/in")),
         "OUTPUT_PATH": Path(os.getenv("OUTPUT_PATH", "/temp/out")),
+        "DELETE_INPUT": parse_bool(os.getenv("DELETE_INPUT", "false")),
+        "DELETE_OUTPUT": parse_bool(os.getenv("DELETE_OUTPUT", "false")),
         # Processing settings
         "OVERWRITE": parse_bool(os.getenv("OVERWRITE", "false")),
         "OVERWRITE_GCS": parse_bool(os.getenv("OVERWRITE_GCS", "false")),
@@ -107,6 +110,8 @@ gcs_output_bucket_name = config["GCS_OUTPUT_BUCKET_NAME"]
 gcs_output_path = config["GCS_OUTPUT_PREFIX"]
 input_path = config["INPUT_PATH"]
 output_path = config["OUTPUT_PATH"]
+delete_input = config["DELETE_INPUT"]
+delete_output = config["DELETE_OUTPUT"]
 overwrite_output = config["OVERWRITE"]
 overwrite_gcs = config["OVERWRITE_GCS"]
 num_mips = config["NUM_MIPS"]
@@ -148,13 +153,8 @@ def list_gcs_files(bucket_name, prefix="", file_extension=""):
     """
     if gcs_local_list and gcs_local_list.exists():
         print(f"Loading file list from local file: {gcs_local_list}")
-        full_prefix_str = "gs://" + bucket_name + "/"
         with open(gcs_local_list, "r") as f:
-            files = [
-                line.strip().rstrip("/")[len(full_prefix_str) :]
-                for line in f
-                if line.strip()
-            ]
+            files = [line.strip() for line in f if line.strip()]
         print(f"Found {len(files)} files in local list")
         return files
     client = storage.Client(project=gcs_project)
@@ -281,9 +281,9 @@ def get_local_cache_path(row, col):
 
     # Create local filename based on remote file
     if use_gcs_bucket:
-        cache_dir = input_path / "cache"
+        cache_dir = input_path
         cache_dir.mkdir(exist_ok=True, parents=True)
-        local_name = str(remote_file).split("/")[-1]
+        local_name = str(remote_file).rstrip("/").split("/")[-1]
         output = Path(cache_dir / local_name)
     else:
         output = Path(remote_file)
@@ -316,7 +316,45 @@ def get_remote_file_path(row, col):
     return None
 
 
-def download_file(row, col):
+def gcloud_download_dir(gs_prefix: str, local_dir: Path) -> None:
+    """
+    Recursively download a GCS prefix to a local directory using gcloud.
+    Example gs_prefix: 'gs://my-bucket/some/prefix/'
+    """
+    local_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use a list (no shell=True) to avoid injection issues
+    cmd = [
+        "gcloud",
+        "storage",
+        "cp",
+        "--recursive",
+        "--project",
+        gcs_project,
+        gs_prefix,
+        str(local_dir),
+    ]
+
+    print("Running command:", " ".join(cmd))
+    try:
+        res = subprocess.run(
+            cmd,
+            check=True,  # raises CalledProcessError on nonzero exit
+            capture_output=True,  # capture logs; integrate with your logger
+            text=True,
+        )
+        print(res.stdout)
+        if res.stderr:
+            print(res.stderr)
+    except subprocess.CalledProcessError as e:
+        # Surface meaningful diagnostics
+        print("gcloud cp failed:", e.returncode)
+        print(e.stdout)
+        print(e.stderr)
+        raise
+
+
+def download_zarr_file(row, col):
     """
     Download the file for a specific row and column to local cache.
 
@@ -341,23 +379,13 @@ def download_file(row, col):
         print(f"File already cached: {local_path}")
         return local_path
 
-    local_path.parent.mkdir(exist_ok=True, parents=True)
+    local_path.mkdir(exist_ok=True, parents=True)
 
     if use_gcs_bucket:
-        # Download from GCS
-        try:
-            client = storage.Client(project=gcs_project)
-            bucket = client.bucket(gcs_bucket_name)
-            blob = bucket.blob(remote_file)
-
-            print(f"Downloading {remote_file} to {local_path}")
-            blob.download_to_filename(str(local_path))
-            print(f"Downloaded successfully: {local_path}")
-            return local_path
-        except Exception as e:
-            print(f"Error downloading {remote_file}: {e}")
-            return None
-    return remote_file  # For local files, just return the path
+        gcloud_download_dir(remote_file, local_path.parent)
+        return local_path
+    else:
+        return remote_file  # For local files, just return the path
 
 
 def load_file(row, col):
@@ -372,7 +400,7 @@ def load_file(row, col):
     Returns:
         zarr store object, or None if not found/error
     """
-    local_path = download_file(row, col)
+    local_path = download_zarr_file(row, col)
     if local_path is None:
         return None
 
@@ -385,7 +413,7 @@ def load_file(row, col):
         return None
 
 
-def delete_cached_file(row, col):
+def delete_cached_zarr_file(row, col):
     """
     Delete the locally cached file for a specific row and column to save disk space.
 
@@ -396,15 +424,23 @@ def delete_cached_file(row, col):
     Returns:
         bool: True if file was deleted or didn't exist, False if error
     """
-    if not use_gcs_bucket:
+    if not use_gcs_bucket or not delete_input:
         return True
     local_path = get_local_cache_path(row, col)
     if local_path is None:
         return True
 
     try:
+        # Check that local_path is not something dangerous like root or home directory
+        if local_path in [Path("/"), Path.home()]:
+            print(f"Refusing to delete dangerous path: {local_path}")
+            return False
+        # It should also end with .zarr
+        if not local_path.suffix == ".zarr":
+            print(f"Refusing to delete non-zarr path: {local_path}")
+            return False
         if local_path.exists():
-            local_path.unlink()
+            local_path.rmdir()
             print(f"Deleted cached file: {local_path}")
         return True
     except Exception as e:
@@ -743,7 +779,7 @@ def process(args):
 
     # Clean up cached file to save disk space
     # (you can comment this out if you want to keep files cached)
-    delete_cached_file(x_i, y_i)
+    delete_cached_zarr_file(x_i, y_i)
 
     # Return the bounds of the processed chunk
     return (start, end)
@@ -892,7 +928,7 @@ def check_and_upload_completed_chunks():
                 ):
                     uploaded_count += 1
                     # Remove local chunk to save space
-                    if use_gcs_output:
+                    if use_gcs_output and delete_output:
                         chunk_file.unlink()
                     uploaded_files.append((chunk_file, gcs_chunk_path))
 
@@ -926,7 +962,7 @@ def upload_any_remaining_chunks():
             if upload_file_to_gcs(chunk_file, gcs_chunk_path, overwrite=overwrite_gcs):
                 uploaded_count += 1
                 # Remove local chunk to save space
-                if use_gcs_output:
+                if use_gcs_output and delete_output:
                     chunk_file.unlink()
                 uploaded_files.append((chunk_file, gcs_chunk_path))
 
