@@ -70,6 +70,7 @@ def load_env_config():
             "GCS_OUTPUT_BUCKET_NAME", "your-output-bucket-name"
         ),
         "GCS_OUTPUT_PREFIX": os.getenv("GCS_OUTPUT_PREFIX", "processed/"),
+        "NUM_UPLOAD_WORKERS": int(os.getenv("NUM_UPLOAD_WORKERS", "4")),
         # Local paths (used when USE_GCS_BUCKET is False)
         "INPUT_PATH": Path(os.getenv("INPUT_PATH", "/temp/in")),
         "OUTPUT_PATH": Path(os.getenv("OUTPUT_PATH", "/temp/out")),
@@ -77,7 +78,6 @@ def load_env_config():
         "DELETE_OUTPUT": parse_bool(os.getenv("DELETE_OUTPUT", "false")),
         # Processing settings
         "OVERWRITE": parse_bool(os.getenv("OVERWRITE", "false")),
-        "OVERWRITE_GCS": parse_bool(os.getenv("OVERWRITE_GCS", "false")),
         "NUM_MIPS": int(os.getenv("NUM_MIPS", "5")),
         "MIP_CUTOFF": int(os.getenv("MIP_CUTOFF", "0")),
         "CHANNEL_LIMIT": int(os.getenv("CHANNEL_LIMIT", "4")),
@@ -107,13 +107,13 @@ gcs_local_list = config["GCS_FILES_LOCAL_LIST"]
 gcs_project = config["GCS_PROJECT"]
 use_gcs_output = config["USE_GCS_OUTPUT"]
 gcs_output_bucket_name = config["GCS_OUTPUT_BUCKET_NAME"]
-gcs_output_path = config["GCS_OUTPUT_PREFIX"]
+gcs_output_path = config["GCS_OUTPUT_PREFIX"].rstrip("/") + "/"
+num_upload_workers = config["NUM_UPLOAD_WORKERS"]
 input_path = config["INPUT_PATH"]
 output_path = config["OUTPUT_PATH"]
 delete_input = config["DELETE_INPUT"]
 delete_output = config["DELETE_OUTPUT"]
 overwrite_output = config["OVERWRITE"]
-overwrite_gcs = config["OVERWRITE_GCS"]
 num_mips = config["NUM_MIPS"]
 mip_cutoff = config["MIP_CUTOFF"]
 channel_limit = config["CHANNEL_LIMIT"]
@@ -454,7 +454,7 @@ def sync_info_to_gcs_output():
     This uploads the info file so the bucket is ready to receive the rest of the data.
     """
     local_info_path = output_path / "info"
-    gcs_info_path = gcs_output_path.rstrip("/") + "/info"
+    gcs_info_path = gcs_output_path + "info"
     upload_file_to_gcs(local_info_path, gcs_info_path)
 
 
@@ -652,7 +652,9 @@ vol.provenance.description = "Example data conversion"
 vol.commit_provenance()
 
 # Sync the info file to GCS output bucket if configured
-sync_info_to_gcs_output()
+info_synced = True
+if not info_synced and use_gcs_output:
+    sync_info_to_gcs_output()
 
 del vol
 
@@ -924,9 +926,14 @@ def upload_many_blobs_with_transfer_manager(
     storage_client = Client(project=gcs_project)
     bucket = storage_client.bucket(bucket_name)
 
+    source_directory = str(source_directory)
+    output_filenames = [
+        filenames[len(source_directory) + 1 :] for filenames in filenames
+    ]
+
     results = transfer_manager.upload_many_from_filenames(
         bucket,
-        filenames,
+        output_filenames,
         source_directory=source_directory,
         blob_name_prefix=gcs_output_path,
         max_workers=workers,
@@ -962,11 +969,12 @@ def check_and_upload_completed_chunks():
         # For each file in the output dir check if it is fully covered by the already processed bounds
         # First, we loop over all the files in the output directory
         for chunk_file in output_path_for_mip.glob("**/*"):
-            if str(chunk_file) in uploaded_files:
+            chunk_file = str(chunk_file)
+            if chunk_file in uploaded_files:
                 continue
             # 1. Pull out the bounds of the chunk from the filename
             # filename format is x0-x1_y0-y1_z0-z1
-            match = re.search(r"(\d+)-(\d+)_(\d+)-(\d+)_(\d+)-(\d+)", str(chunk_file))
+            match = re.search(r"(\d+)-(\d+)_(\d+)-(\d+)_(\d+)-(\d+)", chunk_file)
             if not match:
                 continue
             x0, x1, y0, y1, z0, z1 = map(int, match.groups())
@@ -993,7 +1001,10 @@ def check_and_upload_completed_chunks():
         print(f"Uploading {len(files_to_upload_this_batch)} completed chunks to GCS...")
         if use_gcs_output:
             upload_many_blobs_with_transfer_manager(
-                gcs_output_bucket_name, files_to_upload_this_batch, workers=8
+                gcs_output_bucket_name,
+                files_to_upload_this_batch,
+                source_directory=output_path,
+                workers=num_upload_workers,
             )
             uploaded_count += len(files_to_upload_this_batch)
         else:
