@@ -96,15 +96,14 @@ def main():
         allow_non_aligned_write=allow_non_aligned_write,
     )
 
-    # Process each well into chunks
-    iter_coords = list(get_grid_coords(num_chunks_per_dim))
-
     # Find which files were already done and keep track of them
     uploaded_files = get_uploaded_files(output_path)
-
     processed_chunks = []
     failed_chunks = []
     total_uploads = 0
+
+    # Process each well into chunks
+    iter_coords = list(get_grid_coords(num_chunks_per_dim))
     for coord in iter_coords[:MAX_ITERS]:
         bounds = process(
             args=coord,
