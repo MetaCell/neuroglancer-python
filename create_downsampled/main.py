@@ -64,13 +64,14 @@ def main():
     zarr_store = load_file(
         0, 0, use_gcs_bucket, input_path, total_rows, total_cols, all_files, gcs_project
     )
-    volume_shape = zarr_store.shape
+    single_vol_shape = zarr_store.shape
     # Input is in Z, T, C, Y, X order but want XYTCZ order
-    single_file_xyz_shape = [volume_shape[4], volume_shape[3], volume_shape[1]]
-    single_file_shape = np.array(volume_shape)
-    num_chunks_per_dim = np.ceil(volume_shape / single_file_shape).astype(int)
-    num_channels = min(volume_shape[2], channel_limit)
-    data_type = "uint16"
+    single_file_xyz_shape = [
+        single_vol_shape[4],
+        single_vol_shape[3],
+        single_vol_shape[1],
+    ]
+    single_file_shape = np.array(single_file_xyz_shape)
 
     # Compute volume and chunk sizes
     volume_size, chunk_size = compute_volume_and_chunk_size(
@@ -80,6 +81,10 @@ def main():
         num_mips,
         manual_chunk_size,
     )
+
+    num_chunks_per_dim = np.ceil(volume_size / single_file_shape).astype(int)
+    num_channels = min(single_vol_shape[2], channel_limit)
+    data_type = "uint16"
 
     vols = create_cloudvolume_info(
         num_channels,
@@ -104,7 +109,7 @@ def main():
         bounds = process(
             args=coord,
             single_file_shape=single_file_shape,
-            volume_shape=volume_shape,
+            volume_shape=volume_size,
             vols=vols,
             chunk_size=chunk_size,
             num_mips=num_mips,
@@ -141,25 +146,28 @@ def main():
         print(f"Total chunks uploaded so far: {total_uploads}")
 
     if failed_chunks:
-        print(f"Failed to process {len(failed_chunks)} chunks:")
-        for chunk in failed_chunks:
-            print(f"  {chunk}")
+        print("Some chunks failed to upload, writing to failed_chunks.txt")
+        with open(output_path / "failed_chunks.txt", "w") as f:
+            for item in failed_chunks:
+                f.write(f"{item}\n")
 
     remaining_files = check_any_remaining_chunks(
         num_mips=num_mips, output_path=output_path, uploaded_files=uploaded_files
     )
     if remaining_files:
-        print(f"Remaining chunks: {remaining_files}")
-
-    # Do at the end to avoid uploading info file repeatedly
-    # if issues during processing of chunks
-    sync_info_to_gcs_output(
-        output_path,
-        gcs_output_path,
-        use_gcs_output,
-        gcs_project,
-        gcs_output_bucket_name,
-    )
+        for f in remaining_files:
+            if f not in failed_chunks:
+                print(f"Remaining file not yet uploaded: {f}")
+    else:
+        # Do at the end to avoid uploading info file repeatedly
+        # if issues during processing of chunks
+        sync_info_to_gcs_output(
+            output_path,
+            gcs_output_path,
+            use_gcs_output,
+            gcs_project,
+            gcs_output_bucket_name,
+        )
 
 
 if __name__ == "__main__":
