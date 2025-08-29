@@ -4,7 +4,7 @@ import numpy as np
 from load_config import load_env_config
 from gcs import list_gcs_files, sync_info_to_gcs_output
 from wells import compute_grid_dimensions, get_grid_coords
-from io import load_file, check_and_upload_completed_chunks, check_any_remaining_chunks
+from gcs_local_io import load_file, check_and_upload_completed_chunks, check_any_remaining_chunks
 from chunking import compute_volume_and_chunk_size, process
 from volume import create_cloudvolume_info
 
@@ -87,28 +87,29 @@ def main():
     )
 
     # Process each well into chunks
-    iter_coords = get_grid_coords(num_chunks_per_dim)
+    iter_coords = list(get_grid_coords(num_chunks_per_dim))
 
     processed_chunks = []
     failed_chunks = []
     total_uploads = 0
     for coord in iter_coords[:MAX_ITERS]:
         bounds = process(
-            coord,
-            single_file_shape,
-            volume_shape,
-            vols,
-            chunk_size,
-            num_mips,
-            mip_cutoff,
-            allow_non_aligned_write,
-            overwrite_output,
-            use_gcs_bucket,
-            input_path,
-            total_rows,
-            total_cols,
-            all_files,
-            gcs_project,
+            args=coord,
+            single_file_shape=single_file_shape,
+            volume_shape=volume_shape,
+            vols=vols,
+            chunk_size=chunk_size,
+            num_mips=num_mips,
+            mip_cutoff=mip_cutoff,
+            allow_non_aligned_write=allow_non_aligned_write,
+            overwrite_output=overwrite_output,
+            progress_dir=output_path / "progress",
+            total_rows=total_rows,
+            total_cols=total_cols,
+            use_gcs_bucket=use_gcs_bucket,
+            input_path=input_path,
+            all_files=all_files,
+            delete_input=delete_input,
         )
         start, end = bounds
         processed_chunks.append((start, end))
@@ -133,3 +134,7 @@ def main():
         gcs_project,
         gcs_output_bucket_name,
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -6,12 +6,12 @@ import re
 import zarr
 import numpy as np
 
-from chunking import is_chunk_fully_covered
+from chunk_utils import is_chunk_fully_covered
 from wells import extract_row_col_from_filename
 from gcs import gcloud_download_dir, upload_many_blobs_with_transfer_manager
 
 
-def get_local_cache_path(row, col, use_gcs_bucket, input_path):
+def get_local_cache_path(remote_file, use_gcs_bucket, input_path):
     """
     Get the local cache path where a file for the given row/col should be stored.
 
@@ -22,11 +22,6 @@ def get_local_cache_path(row, col, use_gcs_bucket, input_path):
     Returns:
         Path: Local cache path for the file
     """
-
-    # Get the remote file path/name for this row/col
-    remote_file = get_remote_file_path(row, col)
-    if remote_file is None:
-        return None
 
     # Create local filename based on remote file
     if use_gcs_bucket:
@@ -83,7 +78,7 @@ def download_zarr_file(
         print(f"No file found for row {row}, col {col}")
         return None
 
-    local_path = get_local_cache_path(row, col, use_gcs_bucket, input_path)
+    local_path = get_local_cache_path(remote_file, use_gcs_bucket, input_path)
     if local_path is None:
         return None
 
@@ -137,7 +132,16 @@ def load_file(
         return None
 
 
-def delete_cached_zarr_file(row, col, use_gcs_bucket, delete_input, input_path):
+def delete_cached_zarr_file(
+    row,
+    col,
+    total_rows,
+    total_cols,
+    use_gcs_bucket,
+    delete_input,
+    input_path,
+    all_files,
+):
     """
     Delete the locally cached file for a specific row and column to save disk space.
 
@@ -150,7 +154,8 @@ def delete_cached_zarr_file(row, col, use_gcs_bucket, delete_input, input_path):
     """
     if not use_gcs_bucket or not delete_input:
         return True
-    local_path = get_local_cache_path(row, col, use_gcs_bucket, input_path)
+    remote_path = get_remote_file_path(row, col, total_rows, total_cols, all_files)
+    local_path = get_local_cache_path(remote_path, use_gcs_bucket, input_path)
     if local_path is None:
         return True
 
