@@ -869,12 +869,13 @@ def is_chunk_fully_covered(chunk_bounds, processed_chunks_bounds):
     # All corners are covered
     return True
 
+
 # %% Read in the files that were already processed
 
 already_uploaded_path = output_path / "uploaded_to_gcs_chunks.txt"
 if already_uploaded_path.exists():
     with open(already_uploaded_path, "r") as f:
-        uploaded_files = f.readlines()
+        uploaded_files = [line.strip() for line in f.readlines() if line.strip()]
 else:
     uploaded_files = []
 
@@ -961,8 +962,7 @@ def check_and_upload_completed_chunks():
         # For each file in the output dir check if it is fully covered by the already processed bounds
         # First, we loop over all the files in the output directory
         for chunk_file in output_path_for_mip.glob("**/*"):
-            # TODO probably need to use remote files here
-            if chunk_file in uploaded_files:
+            if str(chunk_file) in uploaded_files:
                 continue
             # 1. Pull out the bounds of the chunk from the filename
             # filename format is x0-x1_y0-y1_z0-z1
@@ -991,10 +991,15 @@ def check_and_upload_completed_chunks():
 
     if files_to_upload_this_batch:
         print(f"Uploading {len(files_to_upload_this_batch)} completed chunks to GCS...")
-        upload_many_blobs_with_transfer_manager(
-            gcs_output_bucket_name, files_to_upload_this_batch, workers=8
-        )
-        uploaded_count += len(files_to_upload_this_batch)
+        if use_gcs_output:
+            upload_many_blobs_with_transfer_manager(
+                gcs_output_bucket_name, files_to_upload_this_batch, workers=8
+            )
+            uploaded_count += len(files_to_upload_this_batch)
+        else:
+            print("GCS output not configured, skipping upload")
+            uploaded_count += len(files_to_upload_this_batch)
+            uploaded_files.extend([str(x) for x in files_to_upload_this_batch])
 
         # Remove local chunks to save space
         if use_gcs_output and delete_output:
@@ -1006,18 +1011,23 @@ def check_and_upload_completed_chunks():
                     chunk_file.unlink()
                 except Exception as e:
                     print(f"Error deleting local chunk file {chunk_file}: {e}")
+
+    # Append to the list of uploaded files
+    with open(already_uploaded_path, "a") as f:
+        for file in files_to_upload_this_batch:
+            if file not in failed_files:
+                f.write(f"{file}\n")
+
     return uploaded_count
 
 
-def upload_any_remaining_chunks():
+def check_any_remaining_chunks():
     """
-    Upload any remaining chunks in the output directory to GCS.
+    Check any remaining chunks in the output directory to GCS.
     This is called at the end of processing to ensure all data is uploaded.
 
-    Returns:
-        int: Number of chunks uploaded
     """
-    uploaded_count = 0
+    non_uploaded_files = []
 
     for mip_level in range(num_mips):
         factor = 2**mip_level
@@ -1025,22 +1035,11 @@ def upload_any_remaining_chunks():
         output_path_for_mip = output_path / dir_name
         # For each file in the output dir
         for chunk_file in output_path_for_mip.glob("**/*"):
-            if chunk_file in uploaded_files:
+            if str(chunk_file) in uploaded_files:
                 continue
-            relative_path = chunk_file.relative_to(output_path)
-            gcs_chunk_path = (
-                gcs_output_path.rstrip("/")
-                + "/"
-                + str(relative_path).replace("\\", "/")
-            )
-            if upload_file_to_gcs(chunk_file, gcs_chunk_path, overwrite=overwrite_gcs):
-                uploaded_count += 1
-                # Remove local chunk to save space
-                if use_gcs_output and delete_output:
-                    chunk_file.unlink()
-                uploaded_files.append((chunk_file, gcs_chunk_path))
+            non_uploaded_files.append(str(chunk_file))
 
-    return uploaded_count
+    return non_uploaded_files
 
 
 # %% Move the data across with a single worker
@@ -1060,33 +1059,15 @@ for coord in iter_coords:
     total_uploaded_files += check_and_upload_completed_chunks()
     print(f"Total uploaded chunks so far: {total_uploaded_files}")
 
-# Write files that were written before that final upload check
-with open(output_path / "processed_chunks.txt", "w") as f:
-    for local_path, gcs_path in uploaded_files:
-        f.write(f"{local_path} -> {gcs_path}\n")
-
-# %% Show any failed uploads
+# %% Show any failed uploads or files left over
 if failed_files:
     print("The following files failed to upload to GCS:")
     for f in failed_files:
         print(f)
 
-# %% Final upload of any remaining chunks - hopefully should be none here, but maybe some failed
-# This is not something we always want to run, so puttin an input prompt here just in case
-continue_upload = input(
-    "Do you want to upload any remaining chunks in the output directory to GCS? (y/n): "
-)
-if continue_upload.lower() != "y":
-    print("Skipping final upload of remaining chunks.")
-else:
-    print("Processing complete, uploading any remaining chunks...")
-    total_uploaded_files += upload_any_remaining_chunks()
-    print(f"Final upload completed: {total_uploaded_files} chunks uploaded")
-
-    # Write the list of uploaded files to a text file for reference
-    with open(output_path / "uploaded_files.txt", "w") as f:
-        for local_path, gcs_path in uploaded_files:
-            f.write(f"{local_path} -> {gcs_path}\n")
+remaining_files = check_any_remaining_chunks()
+if remaining_files:
+    print(f"The following files were not uploaded yet: {remaining_files}")
 
 # %% Serve the dataset to be used in neuroglancer
 vols[0].viewer(port=1337)
