@@ -869,11 +869,77 @@ def is_chunk_fully_covered(chunk_bounds, processed_chunks_bounds):
     # All corners are covered
     return True
 
+# %% Read in the files that were already processed
+
+already_uploaded_path = output_path / "uploaded_to_gcs_chunks.txt"
+if already_uploaded_path.exists():
+    with open(already_uploaded_path, "r") as f:
+        uploaded_files = f.readlines()
+else:
+    uploaded_files = []
 
 # %% Function to check the output directory for completed chunks and upload them to GCS
 
 processed_chunks_bounds = []
-uploaded_files = []
+failed_files = []
+
+
+def upload_many_blobs_with_transfer_manager(
+    bucket_name, filenames, source_directory="", workers=8
+):
+    """Upload every file in a list to a bucket, concurrently in a process pool.
+
+    Each blob name is derived from the filename, not including the
+    `source_directory` parameter. For complete control of the blob name for each
+    file (and other aspects of individual blob metadata), use
+    transfer_manager.upload_many() instead.
+    """
+
+    # The ID of your GCS bucket
+    # bucket_name = "your-bucket-name"
+
+    # A list (or other iterable) of filenames to upload.
+    # filenames = ["file_1.txt", "file_2.txt"]
+
+    # The directory on your computer that is the root of all of the files in the
+    # list of filenames. This string is prepended (with os.path.join()) to each
+    # filename to get the full path to the file. Relative paths and absolute
+    # paths are both accepted. This string is not included in the name of the
+    # uploaded blob; it is only used to find the source files. An empty string
+    # means "the current working directory". Note that this parameter allows
+    # directory traversal (e.g. "/", "../") and is not intended for unsanitized
+    # end user input.
+    # source_directory=""
+
+    # The maximum number of processes to use for the operation. The performance
+    # impact of this value depends on the use case, but smaller files usually
+    # benefit from a higher number of processes. Each additional process occupies
+    # some CPU and memory resources until finished. Threads can be used instead
+    # of processes by passing `worker_type=transfer_manager.THREAD`.
+    # workers=8
+
+    from google.cloud.storage import Client, transfer_manager
+
+    storage_client = Client(project=gcs_project)
+    bucket = storage_client.bucket(bucket_name)
+
+    results = transfer_manager.upload_many_from_filenames(
+        bucket,
+        filenames,
+        source_directory=source_directory,
+        blob_name_prefix=gcs_output_path,
+        max_workers=workers,
+    )
+
+    for name, result in zip(filenames, results):
+        # The results list is either `None` or an exception for each filename in
+        # the input list, in order.
+
+        if isinstance(result, Exception):
+            failed_files.append(name)
+            print("Failed to upload {} due to exception: {}".format(name, result))
+        else:
+            uploaded_files.append(name)
 
 
 # TODO this probably wants to bulk together uploads to reduce overhead
@@ -886,6 +952,7 @@ def check_and_upload_completed_chunks():
         int: Number of chunks uploaded
     """
     uploaded_count = 0
+    files_to_upload_this_batch = []
 
     for mip_level in range(num_mips):
         factor = 2**mip_level
@@ -894,7 +961,8 @@ def check_and_upload_completed_chunks():
         # For each file in the output dir check if it is fully covered by the already processed bounds
         # First, we loop over all the files in the output directory
         for chunk_file in output_path_for_mip.glob("**/*"):
-            if chunk_file in [uf[0] for uf in uploaded_files]:
+            # TODO probably need to use remote files here
+            if chunk_file in uploaded_files:
                 continue
             # 1. Pull out the bounds of the chunk from the filename
             # filename format is x0-x1_y0-y1_z0-z1
@@ -918,23 +986,26 @@ def check_and_upload_completed_chunks():
             covered = is_chunk_fully_covered(chunk_bounds, processed_chunks_bounds)
 
             if covered:
-                # 3. If it is, upload it to GCS
-                relative_path = chunk_file.relative_to(output_path)
-                gcs_chunk_path = (
-                    gcs_output_path.rstrip("/")
-                    + "/"
-                    + str(relative_path).replace("\\", "/")
-                )
-                # Skip re-uploading files that are already uploaded
-                if upload_file_to_gcs(
-                    chunk_file, gcs_chunk_path, overwrite=overwrite_gcs
-                ):
-                    uploaded_count += 1
-                    # Remove local chunk to save space
-                    if use_gcs_output and delete_output:
-                        chunk_file.unlink()
-                    uploaded_files.append((chunk_file, gcs_chunk_path))
+                # 3. If it is, mark to upload it to GCS
+                files_to_upload_this_batch.append(chunk_file)
 
+    if files_to_upload_this_batch:
+        print(f"Uploading {len(files_to_upload_this_batch)} completed chunks to GCS...")
+        upload_many_blobs_with_transfer_manager(
+            gcs_output_bucket_name, files_to_upload_this_batch, workers=8
+        )
+        uploaded_count += len(files_to_upload_this_batch)
+
+        # Remove local chunks to save space
+        if use_gcs_output and delete_output:
+            for chunk_file in files_to_upload_this_batch:
+                if chunk_file in failed_files:
+                    print(f"Skipping deletion of failed upload chunk file {chunk_file}")
+                    continue
+                try:
+                    chunk_file.unlink()
+                except Exception as e:
+                    print(f"Error deleting local chunk file {chunk_file}: {e}")
     return uploaded_count
 
 
@@ -954,7 +1025,7 @@ def upload_any_remaining_chunks():
         output_path_for_mip = output_path / dir_name
         # For each file in the output dir
         for chunk_file in output_path_for_mip.glob("**/*"):
-            if chunk_file in [uf[0] for uf in uploaded_files]:
+            if chunk_file in uploaded_files:
                 continue
             relative_path = chunk_file.relative_to(output_path)
             gcs_chunk_path = (
@@ -971,20 +1042,6 @@ def upload_any_remaining_chunks():
 
     return uploaded_count
 
-# Upload process
-# 1. Write chunks to a local directory that is temporary
-# 2. When a processing step is done (or after every N steps), check the output
-# files in the temp directory to see which ones are fully ready to be uploaded
-# 3. Move these files to a new folder that is for completed files
-# 4. Upload the completed files to GCS using gcloud command line tool
-# if no errors, then write the names of all the files in that folder to a text file
-# ensuring to always append to the text file
-# 5. Delete the files in the completed folder to save space
-# Separately now during the chunk writing step, we should check if any of the
-# files that were created are listed in the uploaded files text file
-# because if they are that was a mistake and we should throw an error about this
-# If there are errors during the upload step, we need to crash the process
-# and check what the error was to know how to proceed from there
 
 # %% Move the data across with a single worker
 total_uploaded_files = 0
@@ -1007,6 +1064,12 @@ for coord in iter_coords:
 with open(output_path / "processed_chunks.txt", "w") as f:
     for local_path, gcs_path in uploaded_files:
         f.write(f"{local_path} -> {gcs_path}\n")
+
+# %% Show any failed uploads
+if failed_files:
+    print("The following files failed to upload to GCS:")
+    for f in failed_files:
+        print(f)
 
 # %% Final upload of any remaining chunks - hopefully should be none here, but maybe some failed
 # This is not something we always want to run, so puttin an input prompt here just in case
