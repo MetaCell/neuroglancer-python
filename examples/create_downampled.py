@@ -61,6 +61,8 @@ def load_env_config():
         "GCS_BUCKET_NAME": os.getenv("GCS_BUCKET_NAME", "your-bucket-name"),
         "GCS_PREFIX": os.getenv("GCS_PREFIX", "path/to/zarr/files/"),
         "GCS_FILE_EXTENSION": os.getenv("GCS_FILE_EXTENSION", ".zarr"),
+        "GCS_FILES_LOCAL_LIST": Path(os.getenv("GCS_FILES_LOCAL_LIST", "")),
+        "GCS_PROJECT": os.getenv("GCS_PROJECT", None),
         # Output GCS bucket configuration (for uploading results)
         "USE_GCS_OUTPUT": parse_bool(os.getenv("USE_GCS_OUTPUT", "false")),
         "GCS_OUTPUT_BUCKET_NAME": os.getenv(
@@ -98,6 +100,8 @@ use_gcs_bucket = config["USE_GCS_BUCKET"]
 gcs_bucket_name = config["GCS_BUCKET_NAME"]
 gcs_input_path = config["GCS_PREFIX"]
 gcs_file_ext = config["GCS_FILE_EXTENSION"]
+gcs_local_list = config["GCS_FILES_LOCAL_LIST"]
+gcs_project = config["GCS_PROJECT"]
 use_gcs_output = config["USE_GCS_OUTPUT"]
 gcs_output_bucket_name = config["GCS_OUTPUT_BUCKET_NAME"]
 gcs_output_path = config["GCS_OUTPUT_PREFIX"]
@@ -142,7 +146,18 @@ def list_gcs_files(bucket_name, prefix="", file_extension=""):
     Returns:
         List of GCS blob names that match the criteria
     """
-    client = storage.Client()
+    if gcs_local_list and gcs_local_list.exists():
+        print(f"Loading file list from local file: {gcs_local_list}")
+        full_prefix_str = "gs://" + bucket_name + "/"
+        with open(gcs_local_list, "r") as f:
+            files = [
+                line.strip().rstrip("/")[len(full_prefix_str) :]
+                for line in f
+                if line.strip()
+            ]
+        print(f"Found {len(files)} files in local list")
+        return files
+    client = storage.Client(project=gcs_project)
     bucket = client.bucket(bucket_name)
 
     blobs = bucket.list_blobs(prefix=prefix)
@@ -182,6 +197,9 @@ with open(output_path / "file_list.txt", "w") as f:
     for filepath in all_files:
         f.write(f"{filepath}\n")
 
+# %%
+
+all_files
 
 # %% Determine grid dimensions from files
 
@@ -265,9 +283,8 @@ def get_local_cache_path(row, col):
     if use_gcs_bucket:
         cache_dir = input_path / "cache"
         cache_dir.mkdir(exist_ok=True, parents=True)
-        # For GCS files, use the blob name but replace slashes with underscores
-        local_name = str(remote_file).replace("/", "_").replace("\\", "_")
-        output = cache_dir / local_name
+        local_name = str(remote_file).split("/")[-1]
+        output = Path(cache_dir / local_name)
     else:
         output = Path(remote_file)
 
@@ -324,10 +341,12 @@ def download_file(row, col):
         print(f"File already cached: {local_path}")
         return local_path
 
+    local_path.parent.mkdir(exist_ok=True, parents=True)
+
     if use_gcs_bucket:
         # Download from GCS
         try:
-            client = storage.Client()
+            client = storage.Client(project=gcs_project)
             bucket = client.bucket(gcs_bucket_name)
             blob = bucket.blob(remote_file)
 
@@ -419,11 +438,11 @@ def upload_file_to_gcs(local_file_path, gcs_file_path, overwrite=True):
         return True
 
     try:
-        client = storage.Client()
+        client = storage.Client(project=gcs_project)
         bucket = client.bucket(gcs_output_bucket_name)
 
         blob = bucket.blob(gcs_file_path)
-        
+
         # Check if file already exists and overwrite is False
         if not overwrite and blob.exists():
             print(f"File {gcs_file_path} already exists in GCS, skipping upload")
@@ -868,7 +887,9 @@ def check_and_upload_completed_chunks():
                     + str(relative_path).replace("\\", "/")
                 )
                 # Skip re-uploading files that are already uploaded
-                if upload_file_to_gcs(chunk_file, gcs_chunk_path, overwrite=overwrite_gcs):
+                if upload_file_to_gcs(
+                    chunk_file, gcs_chunk_path, overwrite=overwrite_gcs
+                ):
                     uploaded_count += 1
                     # Remove local chunk to save space
                     if use_gcs_output:
