@@ -971,6 +971,20 @@ def upload_any_remaining_chunks():
 
     return uploaded_count
 
+# Upload process
+# 1. Write chunks to a local directory that is temporary
+# 2. When a processing step is done (or after every N steps), check the output
+# files in the temp directory to see which ones are fully ready to be uploaded
+# 3. Move these files to a new folder that is for completed files
+# 4. Upload the completed files to GCS using gcloud command line tool
+# if no errors, then write the names of all the files in that folder to a text file
+# ensuring to always append to the text file
+# 5. Delete the files in the completed folder to save space
+# Separately now during the chunk writing step, we should check if any of the
+# files that were created are listed in the uploaded files text file
+# because if they are that was a mistake and we should throw an error about this
+# If there are errors during the upload step, we need to crash the process
+# and check what the error was to know how to proceed from there
 
 # %% Move the data across with a single worker
 total_uploaded_files = 0
