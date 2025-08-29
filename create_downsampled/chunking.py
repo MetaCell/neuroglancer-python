@@ -105,6 +105,8 @@ def process(
     input_path,
     all_files,
     delete_input,
+    gcs_project,
+    num_channels,
 ):
     x_i, y_i, z_i = args
 
@@ -125,13 +127,22 @@ def process(
 
     # Use the new load_file function that handles download/caching
     print(f"Loading file for coordinates ({x_i}, {y_i}, {z_i})")
-    loaded_zarr_store = load_file(x_i, y_i)
+    loaded_zarr_store = load_file(
+        x_i,
+        y_i,
+        use_gcs_bucket,
+        input_path,
+        total_rows,
+        total_cols,
+        all_files,
+        gcs_project,
+    )
 
     if loaded_zarr_store is None:
         print(f"Warning: Could not load file for row {x_i}, col {y_i}. Skipping...")
         return
 
-    rawdata = load_data_from_zarr_store(loaded_zarr_store)
+    rawdata = load_data_from_zarr_store(loaded_zarr_store, num_channels)
 
     # Process all mip levels
     for mip_level in reversed(range(mip_cutoff, num_mips)):

@@ -4,7 +4,12 @@ import numpy as np
 from load_config import load_env_config
 from gcs import list_gcs_files, sync_info_to_gcs_output
 from wells import compute_grid_dimensions, get_grid_coords
-from gcs_local_io import load_file, check_and_upload_completed_chunks, check_any_remaining_chunks
+from gcs_local_io import (
+    get_uploaded_files,
+    load_file,
+    check_and_upload_completed_chunks,
+    check_any_remaining_chunks,
+)
 from chunking import compute_volume_and_chunk_size, process
 from volume import create_cloudvolume_info
 
@@ -89,6 +94,9 @@ def main():
     # Process each well into chunks
     iter_coords = list(get_grid_coords(num_chunks_per_dim))
 
+    # Find which files were already done and keep track of them
+    uploaded_files = get_uploaded_files(output_path)
+
     processed_chunks = []
     failed_chunks = []
     total_uploads = 0
@@ -110,10 +118,26 @@ def main():
             input_path=input_path,
             all_files=all_files,
             delete_input=delete_input,
+            gcs_project=gcs_project,
+            num_channels=num_channels,
         )
         start, end = bounds
         processed_chunks.append((start, end))
-        total_uploads += check_and_upload_completed_chunks()
+        total_uploads += check_and_upload_completed_chunks(
+            num_mips=num_mips,
+            output_path=output_path,
+            volume_size=volume_size,
+            processed_chunks_bounds=processed_chunks,
+            use_gcs_output=use_gcs_output,
+            gcs_project=gcs_project,
+            gcs_output_bucket_name=gcs_output_bucket_name,
+            gcs_output_path=gcs_output_path,
+            num_upload_workers=num_upload_workers,
+            delete_output=delete_output,
+            already_uploaded_path=output_path / "uploaded_to_gcs_chunks.txt",
+            uploaded_files=uploaded_files,
+            failed_files=failed_chunks,
+        )
         print(f"Total chunks uploaded so far: {total_uploads}")
 
     if failed_chunks:
@@ -121,7 +145,9 @@ def main():
         for chunk in failed_chunks:
             print(f"  {chunk}")
 
-    remaining_files = check_any_remaining_chunks()
+    remaining_files = check_any_remaining_chunks(
+        num_mips=num_mips, output_path=output_path, uploaded_files=uploaded_files
+    )
     if remaining_files:
         print(f"Remaining chunks: {remaining_files}")
 

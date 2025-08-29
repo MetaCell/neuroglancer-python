@@ -225,6 +225,7 @@ def check_and_upload_completed_chunks(
     use_gcs_output,
     gcs_project,
     gcs_output_bucket_name,
+    gcs_output_path,
     num_upload_workers,
     delete_output,
     already_uploaded_path,
@@ -283,6 +284,10 @@ def check_and_upload_completed_chunks(
                 gcs_output_bucket_name,
                 files_to_upload_this_batch,
                 source_directory=output_path,
+                gcs_output_path=gcs_output_path,
+                gcs_project=gcs_project,
+                uploaded_files=uploaded_files,
+                failed_files=failed_files,
                 workers=num_upload_workers,
             )
             uploaded_count += len(files_to_upload_this_batch)
