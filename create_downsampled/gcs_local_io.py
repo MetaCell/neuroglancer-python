@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import re
+import shutil
 
 import zarr
 import numpy as np
@@ -169,7 +170,7 @@ def delete_cached_zarr_file(
             print(f"Refusing to delete non-zarr path: {local_path}")
             return False
         if local_path.exists():
-            local_path.rmdir()
+            shutil.rmtree(local_path)
             print(f"Deleted cached file: {local_path}")
         return True
     except Exception as e:
