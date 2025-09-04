@@ -13,9 +13,6 @@ from gcs_local_io import (
 from chunking import compute_volume_and_chunk_size, process
 from volume import create_cloudvolume_info
 
-MAX_ITERS = 4  # For easier testing
-
-
 def main():
     # The config is newer so use old var names just for ease
     config = load_env_config()
@@ -40,6 +37,7 @@ def main():
     channel_limit = config["CHANNEL_LIMIT"]
     allow_non_aligned_write = config["ALLOW_NON_ALIGNED_WRITE"]
     manual_chunk_size = config["MANUAL_CHUNK_SIZE"]
+    max_iters = config["MAX_ITERS"]
 
     # Now call the relevant functions to do the work
     output_path.mkdir(parents=True, exist_ok=True)
@@ -104,7 +102,7 @@ def main():
 
     # Process each well into chunks
     iter_coords = list(get_grid_coords(num_chunks_per_dim))
-    for coord in iter_coords[:MAX_ITERS]:
+    for coord in iter_coords[:max_iters]:
         bounds = process(
             args=coord,
             single_file_shape=single_file_shape,
