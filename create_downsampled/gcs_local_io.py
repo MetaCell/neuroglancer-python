@@ -242,6 +242,7 @@ def check_and_upload_completed_chunks(
     """
     uploaded_count = 0
     files_to_upload_this_batch = []
+    to_delete_files = []
 
     for mip_level in range(num_mips):
         factor = 2**mip_level
@@ -276,7 +277,11 @@ def check_and_upload_completed_chunks(
 
             if covered:
                 # 3. If it is, mark to upload it to GCS
-                files_to_upload_this_batch.append(chunk_file)
+                # If it is already in the list of files to upload, skip it
+                if chunk_file in uploaded_files:
+                    to_delete_files.append(chunk_file)
+                else:
+                    files_to_upload_this_batch.append(chunk_file)
 
     if files_to_upload_this_batch:
         print(f"Uploading {len(files_to_upload_this_batch)} completed chunks to GCS...")
@@ -304,9 +309,16 @@ def check_and_upload_completed_chunks(
                     print(f"Skipping deletion of failed upload chunk file {chunk_file}")
                     continue
                 try:
-                    chunk_file.unlink()
+                    Path(chunk_file).unlink()
                 except Exception as e:
                     print(f"Error deleting local chunk file {chunk_file}: {e}")
+
+    if to_delete_files and delete_output and use_gcs_output:
+        for chunk_file in to_delete_files:
+            if chunk_file in failed_files:
+                print(f"Skipping deletion of failed upload chunk file {chunk_file}")
+                continue
+            Path(chunk_file).unlink()
 
     # Append to the list of uploaded files
     with open(already_uploaded_path, "a") as f:

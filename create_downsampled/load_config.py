@@ -74,6 +74,7 @@ def load_env_config():
             if os.getenv("MANUAL_CHUNK_SIZE", "None").lower() != "none"
             else None
         ),
+        "MAX_ITERS": int(os.getenv("MAX_ITERS", "10000")),
     }
 
     print_config(config)
