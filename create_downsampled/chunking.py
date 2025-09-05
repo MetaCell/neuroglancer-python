@@ -218,16 +218,18 @@ def process(
     touch(f_name)
 
     # Clean up cached file to save disk space
-    delete_cached_zarr_file(
-        x_i,
-        y_i,
-        total_rows,
-        total_cols,
-        use_gcs_bucket,
-        delete_input,
-        input_path,
-        all_files,
-    )
+    # Don't delete row 0 col 0 though as that's a reference file
+    if not (x_i == 0 and y_i == 0):
+        delete_cached_zarr_file(
+            x_i,
+            y_i,
+            total_rows,
+            total_cols,
+            use_gcs_bucket,
+            delete_input,
+            input_path,
+            all_files,
+        )
 
     # Return the bounds of the processed chunk
     return (start, end)

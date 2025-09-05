@@ -253,6 +253,7 @@ def check_and_upload_completed_chunks(
         for chunk_file in output_path_for_mip.glob("**/*"):
             chunk_file = str(chunk_file)
             if chunk_file in uploaded_files:
+                to_delete_files.append(chunk_file)
                 continue
             # 1. Pull out the bounds of the chunk from the filename
             # filename format is x0-x1_y0-y1_z0-z1
@@ -277,11 +278,7 @@ def check_and_upload_completed_chunks(
 
             if covered:
                 # 3. If it is, mark to upload it to GCS
-                # If it is already in the list of files to upload, skip it
-                if chunk_file in uploaded_files:
-                    to_delete_files.append(chunk_file)
-                else:
-                    files_to_upload_this_batch.append(chunk_file)
+                files_to_upload_this_batch.append(chunk_file)
 
     if files_to_upload_this_batch:
         print(f"Uploading {len(files_to_upload_this_batch)} completed chunks to GCS...")
@@ -312,8 +309,13 @@ def check_and_upload_completed_chunks(
                     Path(chunk_file).unlink()
                 except Exception as e:
                     print(f"Error deleting local chunk file {chunk_file}: {e}")
+    else:
+        print("No completed chunks to upload at this time.")
 
     if to_delete_files and delete_output and use_gcs_output:
+        print(
+            f"Deleting {len(to_delete_files)} previously uploaded chunk files to save space..."
+        )
         for chunk_file in to_delete_files:
             if chunk_file in failed_files:
                 print(f"Skipping deletion of failed upload chunk file {chunk_file}")
