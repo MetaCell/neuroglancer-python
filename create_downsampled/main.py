@@ -104,7 +104,7 @@ def main():
     # Process each well into chunks
     iter_coords = list(get_grid_coords(num_chunks_per_dim))
     for coord in iter_coords[:max_iters]:
-        bounds = process(
+        bounds, new_info = process(
             args=coord,
             single_file_shape=single_file_shape,
             volume_shape=volume_size,
@@ -126,22 +126,23 @@ def main():
         )
         start, end = bounds
         processed_chunks.append((start, end))
-        total_uploads += check_and_upload_completed_chunks(
-            num_mips=num_mips,
-            output_path=output_path,
-            volume_size=volume_size,
-            processed_chunks_bounds=processed_chunks,
-            use_gcs_output=use_gcs_output,
-            gcs_project=gcs_project,
-            gcs_output_bucket_name=gcs_output_bucket_name,
-            gcs_output_path=gcs_output_path,
-            num_upload_workers=num_upload_workers,
-            delete_output=delete_output,
-            already_uploaded_path=output_path / "uploaded_to_gcs_chunks.txt",
-            uploaded_files=uploaded_files,
-            failed_files=failed_chunks,
-        )
-        print(f"Total chunks uploaded so far: {total_uploads}")
+        if new_info:
+            total_uploads += check_and_upload_completed_chunks(
+                num_mips=num_mips,
+                output_path=output_path,
+                volume_size=volume_size,
+                processed_chunks_bounds=processed_chunks,
+                use_gcs_output=use_gcs_output,
+                gcs_project=gcs_project,
+                gcs_output_bucket_name=gcs_output_bucket_name,
+                gcs_output_path=gcs_output_path,
+                num_upload_workers=num_upload_workers,
+                delete_output=delete_output,
+                already_uploaded_path=output_path / "uploaded_to_gcs_chunks.txt",
+                uploaded_files=uploaded_files,
+                failed_files=failed_chunks,
+            )
+            print(f"Total chunks uploaded so far: {total_uploads}")
 
         if failed_chunks:
             print("Some chunks failed to upload, writing to failed_chunks.txt")

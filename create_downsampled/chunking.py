@@ -123,7 +123,7 @@ def process(
     f_name = progress_dir / f"{start[0]}-{end[0]}_{start[1]}-{end[1]}.done"
     print(f"Processing chunk: {start} to {end}, file: {f_name}")
     if f_name.exists() and not overwrite_output:
-        return (start, end)
+        return (start, end), False
 
     # Use the new load_file function that handles download/caching
     print(f"Loading file for coordinates ({x_i}, {y_i}, {z_i})")
@@ -184,9 +184,7 @@ def process(
                     for e, c in zip(ds_end_est, chunk_size)
                 ]
                 ds_end = [min(e, s) for e, s in zip(ds_end, volume_shape)]
-            print("DS fill", ds_start, ds_end)
             downsampled = downsample_with_averaging(rawdata, factor_tuple)
-            print("Downsampled shape:", downsampled.shape)
 
         if not allow_non_aligned_write:
             # TODO may need to ignore padding at the data edges
@@ -210,9 +208,23 @@ def process(
                 )
                 print("Padded downsampled shape:", downsampled.shape)
 
+        # We need to ensure that the end does not exceed the volume size at this mip level
+        mip_bounds = [
+            max(1, round(volume_shape[0] / (2**mip_level))),
+            max(1, round(volume_shape[1] / (2**mip_level))),
+            max(1, round(volume_shape[2] / (2**mip_level))),
+        ]
+        ds_end = [min(e, mb) for e, mb in zip(ds_end, mip_bounds)]
+        downsample_size = [e - s for s, e in zip(ds_start, ds_end)]
+        print(
+            f"MIP {mip_level} (bounds {mip_bounds}): Writing data to volume at {ds_start} to {ds_end}"
+        )
+
         vols[mip_level][
             ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
-        ] = downsampled
+        ] = downsampled[
+            : downsample_size[0], : downsample_size[1], : downsample_size[2]
+        ]
 
     # Mark chunk as complete
     touch(f_name)
@@ -232,4 +244,4 @@ def process(
         )
 
     # Return the bounds of the processed chunk
-    return (start, end)
+    return (start, end), True
