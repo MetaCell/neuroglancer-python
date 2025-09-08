@@ -13,6 +13,7 @@ from gcs_local_io import (
 from chunking import compute_volume_and_chunk_size, process
 from volume import create_cloudvolume_info
 
+
 def main():
     # The config is newer so use old var names just for ease
     config = load_env_config()
@@ -142,11 +143,16 @@ def main():
         )
         print(f"Total chunks uploaded so far: {total_uploads}")
 
-    if failed_chunks:
-        print("Some chunks failed to upload, writing to failed_chunks.txt")
-        with open(output_path / "failed_chunks.txt", "w") as f:
-            for item in failed_chunks:
-                f.write(f"{item}\n")
+        if failed_chunks:
+            print("Some chunks failed to upload, writing to failed_chunks.txt")
+            with open(output_path / "failed_chunks.txt", "w") as f:
+                for item in failed_chunks:
+                    f.write(f"{item}\n")
+
+        # Check for a file in the output dir to stop processing
+        if (output_path / "STOP").exists():
+            print("STOP file found, stopping processing further chunks")
+            break
 
     remaining_files = check_any_remaining_chunks(
         num_mips=num_mips, output_path=output_path, uploaded_files=uploaded_files

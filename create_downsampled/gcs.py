@@ -195,6 +195,7 @@ def upload_many_blobs_with_transfer_manager(
         source_directory=source_directory,
         blob_name_prefix=gcs_output_path,
         max_workers=workers,
+        worker_type=transfer_manager.THREAD
     )
 
     for name, result in zip(filenames, results):
