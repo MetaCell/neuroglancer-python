@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 from google.cloud import storage
 
@@ -38,6 +39,110 @@ def list_gcs_files(
         f"Found {len(filtered_files)} files matching '{file_extension}' extension in bucket '{bucket_name}' with prefix '{prefix}'"
     )
     return filtered_files
+
+
+def gcs_download_prefix_with_transfer_manager(
+    gs_prefix: str,
+    local_dir: Path,
+    gcs_project: str,
+    workers: int = 8,
+    downloaded_files: Optional[List[str]] = None,
+    failed_files: Optional[List[str]] = None,
+    prefix_dirs_to_keep: int = 0,
+) -> Tuple[List[str], List[str]]:
+    """
+    Recursively download a GCS prefix to a local directory using the
+    google-cloud-storage transfer manager (threaded).
+
+    Args:
+        gs_prefix: e.g. 'gs://my-bucket/some/prefix/' (with or without trailing slash)
+        local_dir: local base directory to mirror objects under `prefix`
+        gcs_project: GCP project id for the Storage client
+        workers: number of concurrent workers (threads)
+        downloaded_files: optional list to append successfully downloaded local file paths
+        failed_files: optional list to append local file paths that failed
+        prefix_dirs_to_keep: number of leading prefix directories to keep in local paths.
+
+    Returns:
+        (downloaded_files, failed_files)
+    """
+
+    from google.cloud.storage import Client, transfer_manager
+
+    if downloaded_files is None:
+        downloaded_files = []
+    if failed_files is None:
+        failed_files = []
+
+    if not gs_prefix.startswith("gs://"):
+        raise ValueError("gs_prefix must start with 'gs://'")
+
+    # Split "gs://bucket/prefix..." into bucket/prefix
+    without_scheme = gs_prefix[len("gs://") :]
+    parts = without_scheme.split("/", 1)
+    if len(parts) == 1:
+        bucket_name, prefix = parts[0], ""
+    else:
+        bucket_name, prefix = parts
+    # Normalize: ensure prefix ends with "/" when non-empty so slicing works cleanly
+    if prefix and not prefix.endswith("/"):
+        prefix = prefix + "/"
+
+    local_dir = Path(local_dir)
+    local_dir.mkdir(parents=True, exist_ok=True)
+
+    client = Client(project=gcs_project)
+
+    # List all blobs under the prefix
+    blobs_iter = client.list_blobs(bucket_or_name=bucket_name, prefix=prefix)
+    if prefix_dirs_to_keep == 0:
+        prefix_for_naming = prefix
+    else:
+        prefix_for_naming = (
+            "/".join(prefix.split("/")[: -(prefix_dirs_to_keep + 1)]) + "/"
+        )
+
+    # Prepare (Blob, destination_path) pairs while creating local parent dirs
+    blobs_and_files = []
+    total = 0
+    for blob in blobs_iter:
+        # Skip "directory placeholder" blobs if present
+        if blob.name.endswith("/"):
+            continue
+        total += 1
+        rel_path = blob.name[len(prefix_for_naming) :] if prefix else blob.name
+        dest_path = local_dir / rel_path
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        blobs_and_files.append((blob, str(dest_path)))
+
+    if not blobs_and_files:
+        # Nothing to download; return empty results
+        return downloaded_files, failed_files
+
+    print(
+        f"Starting download: gs://{bucket_name}/{prefix} -> {local_dir} ({total} objects)"
+    )
+
+    # Download concurrently using threads (good for many small objects)
+    results = transfer_manager.download_many(
+        blobs_and_files,
+        max_workers=workers,
+        worker_type=transfer_manager.THREAD,
+    )
+
+    # Handle per-blob results
+    for (blob, dest_path), result in zip(blobs_and_files, results):
+        if isinstance(result, Exception):
+            failed_files.append(str(dest_path))
+            print(f"Failed to download {blob.name} -> {dest_path}: {result}")
+        else:
+            downloaded_files.append(str(dest_path))
+
+    print(
+        f"Done. Downloaded: {len(downloaded_files)}, Failed: {len(failed_files)} "
+        f"(from {total} objects)"
+    )
+    return downloaded_files, failed_files
 
 
 def gcloud_download_dir(gs_prefix: str, local_dir: Path, gcs_project) -> None:
@@ -195,7 +300,7 @@ def upload_many_blobs_with_transfer_manager(
         source_directory=source_directory,
         blob_name_prefix=gcs_output_path,
         max_workers=workers,
-        worker_type=transfer_manager.THREAD
+        worker_type=transfer_manager.THREAD,
     )
 
     for name, result in zip(filenames, results):

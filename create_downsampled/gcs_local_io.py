@@ -9,7 +9,10 @@ import numpy as np
 
 from chunk_utils import is_chunk_fully_covered
 from wells import extract_row_col_from_filename
-from gcs import gcloud_download_dir, upload_many_blobs_with_transfer_manager
+from gcs import (
+    gcs_download_prefix_with_transfer_manager,
+    upload_many_blobs_with_transfer_manager,
+)
 
 
 def get_local_cache_path(remote_file, use_gcs_bucket, input_path):
@@ -49,7 +52,7 @@ def get_remote_file_path(row, col, total_rows, total_cols, all_files):
     """
     if row < 0 or row >= total_rows or col < 0 or col >= total_cols:
         raise ValueError(
-            f"Row and column indices must be within the defined grid (0-{total_rows-1}, 0-{total_cols-1})."
+            f"Row and column indices must be within the defined grid (0-{total_rows - 1}, 0-{total_cols - 1})."
         )
 
     # Try to find file by row/col pattern first
@@ -62,7 +65,15 @@ def get_remote_file_path(row, col, total_rows, total_cols, all_files):
 
 
 def download_zarr_file(
-    row, col, use_gcs_bucket, input_path, total_rows, total_cols, all_files, gcs_project
+    row,
+    col,
+    use_gcs_bucket,
+    input_path,
+    total_rows,
+    total_cols,
+    all_files,
+    gcs_project,
+    num_download_workers=10,
 ):
     """
     Download the file for a specific row and column to local cache.
@@ -91,7 +102,16 @@ def download_zarr_file(
     local_path.mkdir(exist_ok=True, parents=True)
 
     if use_gcs_bucket:
-        gcloud_download_dir(remote_file, local_path.parent, gcs_project)
+        downloaded, failed = gcs_download_prefix_with_transfer_manager(
+            remote_file,
+            local_path.parent,
+            gcs_project,
+            workers=num_download_workers,
+            prefix_dirs_to_keep=1,
+        )
+        if failed:
+            print(f"Failed to download {remote_file} to {local_path}")
+            return None
         return local_path
     else:
         return remote_file  # For local files, just return the path
