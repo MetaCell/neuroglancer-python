@@ -1,0 +1,7 @@
+neuroglancer
+numpy
+scipy
+cloud-volume
+google-cloud-storage
+zarr
+python-dotenv
