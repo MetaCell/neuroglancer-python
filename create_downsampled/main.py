@@ -1,4 +1,5 @@
-# Call the relevant functions
+import argparse
+
 import numpy as np
 
 from load_config import load_env_config
@@ -16,6 +17,23 @@ from volume import create_cloudvolume_info
 
 def main():
     # The config is newer so use old var names just for ease
+    argparser = argparse.ArgumentParser(
+        description="Create a downsampled volume from a grid of well images"
+    )
+    argparser.add_argument(
+        "--failed_at",
+        "-f",
+        type=int,
+        default=None,
+        help="Retrigger upload of a certain row column pair",
+        nargs="*",
+    )
+    args, unknown = argparser.parse_known_args()
+    failed_at = args.failed_at
+    if failed_at is not None:
+        failed_at += [0]
+        failed_at = tuple(failed_at)
+    print(f"Failed at argument: {failed_at}")
     config = load_env_config()
     use_gcs_bucket = config["USE_GCS_BUCKET"]
 
@@ -104,6 +122,7 @@ def main():
     # Process each well into chunks
     iter_coords = list(get_grid_coords(num_chunks_per_dim))
     for coord in iter_coords[:max_iters]:
+        print(f"Processing row, col, z: {coord}")
         bounds, new_info = process(
             args=coord,
             single_file_shape=single_file_shape,
@@ -126,7 +145,8 @@ def main():
         )
         start, end = bounds
         processed_chunks.append((start, end))
-        if new_info:
+
+        if new_info or (failed_at is not None and coord == failed_at):
             total_uploads += check_and_upload_completed_chunks(
                 num_mips=num_mips,
                 output_path=output_path,
@@ -143,6 +163,12 @@ def main():
                 failed_files=failed_chunks,
             )
             print(f"Total chunks uploaded so far: {total_uploads}")
+
+            if failed_at is not None and coord == failed_at:
+                print(
+                    f"Exiting at FAILED_AT point, row {failed_at[0]}, col {failed_at[1]}"
+                )
+                break
 
         if failed_chunks:
             print("Some chunks failed to upload, writing to failed_chunks.txt")
