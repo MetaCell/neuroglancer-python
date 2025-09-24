@@ -25,12 +25,21 @@ def main():
         "-f",
         type=int,
         default=None,
-        help="Retrigger upload of a certain column row pair (in that order)",
+        help="Retrigger upload of a certain row col pair (in that order)",
+        nargs="*",
+    )
+    argparser.add_argument(
+        "--do-specific",
+        "-d",
+        type=int,
+        default=None,
+        help="Process only a specific row col pair (in that order)",
         nargs="*",
     )
     args, unknown = argparser.parse_known_args()
     failed_at = args.failed_at
     if failed_at is not None:
+        args.do_specific = [failed_at[0], failed_at[1]]
         failed_at += [0]
         failed_at = tuple(failed_at)
     print(f"Failed at argument: {failed_at}")
@@ -119,8 +128,22 @@ def main():
     failed_chunks = []
     total_uploads = 0
 
+    if args.do_specific is None:
+        sync_info_to_gcs_output(
+            output_path,
+            gcs_output_path,
+            use_gcs_output,
+            gcs_project,
+            gcs_output_bucket_name,
+        )
+
     # Process each well into chunks
-    iter_coords = list(get_grid_coords(num_chunks_per_dim))
+    if args.do_specific is not None:
+        iter_coords = [tuple(args.do_specific + [0])]
+        max_iters = 1
+    else:
+        iter_coords = list(get_grid_coords(num_chunks_per_dim))
+
     for coord in iter_coords[:max_iters]:
         print(f"Processing row, col, z: {coord}")
         bounds, new_info = process(
@@ -181,23 +204,14 @@ def main():
             print("STOP file found, stopping processing further chunks")
             break
 
-    remaining_files = check_any_remaining_chunks(
-        num_mips=num_mips, output_path=output_path, uploaded_files=uploaded_files
-    )
-    if remaining_files:
-        for f in remaining_files:
-            if f not in failed_chunks:
-                print(f"Remaining file not yet uploaded: {f}")
-    else:
-        # Do at the end to avoid uploading info file repeatedly
-        # if issues during processing of chunks
-        sync_info_to_gcs_output(
-            output_path,
-            gcs_output_path,
-            use_gcs_output,
-            gcs_project,
-            gcs_output_bucket_name,
+    if args.do_specific is not None:
+        remaining_files = check_any_remaining_chunks(
+            num_mips=num_mips, output_path=output_path, uploaded_files=uploaded_files
         )
+        if remaining_files:
+            for f in remaining_files:
+                if f not in failed_chunks:
+                    print(f"Remaining file not yet uploaded: {f}")
 
 
 if __name__ == "__main__":

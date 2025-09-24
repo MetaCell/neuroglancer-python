@@ -53,8 +53,8 @@ def compute_grid_dimensions(file_list):
 
 def get_grid_coords(num_chunks_per_dim, in_reverse=False):
     coords = itertools.product(
-        range(num_chunks_per_dim[0]),
         range(num_chunks_per_dim[1]),
+        range(num_chunks_per_dim[0]),
         range(num_chunks_per_dim[2]),
     )
     if in_reverse:

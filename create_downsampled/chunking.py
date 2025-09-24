@@ -56,8 +56,8 @@ def compute_volume_and_chunk_size(
         chunk_size = computed_chunk_size
 
     volume_size = [
-        single_file_xyz_shape[0] * computed_num_rows,
-        single_file_xyz_shape[1] * computed_num_cols,
+        single_file_xyz_shape[0] * computed_num_cols,
+        single_file_xyz_shape[1] * computed_num_rows,
         single_file_xyz_shape[2],
     ]  # XYZ (T)
     print("Volume size:", volume_size)
@@ -108,7 +108,9 @@ def process(
     gcs_project,
     num_channels,
 ):
-    x_i, y_i, z_i = args
+    y_i, x_i, z_i = args
+    x_file = args[0]
+    y_file = args[1]
 
     start = [
         x_i * single_file_shape[0],
@@ -125,11 +127,12 @@ def process(
     if f_name.exists() and not overwrite_output:
         return (start, end), False
 
-    # Use the new load_file function that handles download/caching
-    print(f"Loading file for coordinates ({x_i}, {y_i}, {z_i})")
+    print(
+        f"Loading file for coordinates at ({x_i}, {y_i}, {z_i}), file index r{x_file}, c{y_file}"
+    )
     loaded_zarr_store = load_file(
-        x_i,
-        y_i,
+        x_file,
+        y_file,
         use_gcs_bucket,
         input_path,
         total_rows,
@@ -139,7 +142,9 @@ def process(
     )
 
     if loaded_zarr_store is None:
-        print(f"Warning: Could not load file for row {x_i}, col {y_i}. Skipping...")
+        print(
+            f"Warning: Could not load file for row {x_file}, col {y_file}. Skipping..."
+        )
         return
 
     rawdata = load_data_from_zarr_store(loaded_zarr_store, num_channels)
@@ -220,11 +225,17 @@ def process(
             f"MIP {mip_level} (bounds {mip_bounds}): Writing data to volume at {ds_start} to {ds_end}"
         )
 
-        vols[mip_level][
-            ds_start[0] : ds_end[0], ds_start[1] : ds_end[1], ds_start[2] : ds_end[2]
-        ] = downsampled[
-            : downsample_size[0], : downsample_size[1], : downsample_size[2]
+        sliced_ds = downsampled[
+            : downsample_size[0], : downsample_size[1], : downsample_size[2], :
         ]
+        # In case the requested bounds are a little larger than the downsampled data due to rounding
+        mip_ends = [s + d for s, d in zip(ds_start, sliced_ds.shape)]
+        vols[mip_level][
+            ds_start[0] : mip_ends[0],
+            ds_start[1] : mip_ends[1],
+            ds_start[2] : mip_ends[2],
+            :,
+        ] = sliced_ds
 
     # Mark chunk as complete
     touch(f_name)
@@ -233,8 +244,8 @@ def process(
     # Don't delete row 0 col 0 though as that's a reference file
     if not (x_i == 0 and y_i == 0):
         delete_cached_zarr_file(
-            x_i,
-            y_i,
+            x_file,
+            y_file,
             total_rows,
             total_cols,
             use_gcs_bucket,
