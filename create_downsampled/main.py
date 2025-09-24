@@ -169,7 +169,11 @@ def main():
         start, end = bounds
         processed_chunks.append((start, end))
 
-        if new_info or (failed_at is not None and coord == failed_at):
+        if (
+            new_info
+            or (failed_at is not None and coord == failed_at)
+            or np.prod(np.array(coord) + 1) == len(iter_coords)
+        ):
             total_uploads += check_and_upload_completed_chunks(
                 num_mips=num_mips,
                 output_path=output_path,
