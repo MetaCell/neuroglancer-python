@@ -25,7 +25,7 @@ def main():
         "-f",
         type=int,
         default=None,
-        help="Retrigger upload of a certain row column pair",
+        help="Retrigger upload of a certain column row pair (in that order)",
         nargs="*",
     )
     args, unknown = argparser.parse_known_args()
@@ -166,7 +166,7 @@ def main():
 
             if failed_at is not None and coord == failed_at:
                 print(
-                    f"Exiting at FAILED_AT point, row {failed_at[0]}, col {failed_at[1]}"
+                    f"Exiting at FAILED_AT point, row {failed_at[1]}, col {failed_at[0]}"
                 )
                 break
 
