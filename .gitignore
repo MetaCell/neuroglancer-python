@@ -162,3 +162,7 @@ cython_debug/
 */node_modules/
 examples/datasets/
 datasets/
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
