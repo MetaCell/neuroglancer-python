@@ -8,7 +8,10 @@ dependencies = [
     "numba",
     "scikit-image",
     "pooch",
-    "cloud-volume", "jupyter>=1.1.1,<2",
+    "cloud-volume",
+    "jupyter>=1.1.1,<2",
+    "tensorstore>=0.1.78,<0.2",
+    "ome-zarr>=0.12.2,<0.13",
 ]
 
 [build-system]
