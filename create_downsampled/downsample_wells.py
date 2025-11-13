@@ -26,7 +26,14 @@ from ome_zarr.writer import write_multiscales_metadata
 INPUT_PATH = Path("data/cppx158_cpp2388/s0")  # Path to N5 dataset
 OUTPUT_PATH = Path("data/output_zarr")  # Output directory for OME-Zarr pyramids
 WELL_SIZE = (540, 540)  # Well dimensions
-DOWNSAMPLE_FACTORS = [2, 4]  # Downsampling factors (1=full res, arbitrary integers)
+DOWNSAMPLE_FACTORS = [
+    1,
+    2,
+    4,
+    8,
+]  # Downsampling factors (1=full res, arbitrary integers)
+SUBSET_ROW = 10
+SUBSET_COL = 10
 
 
 # Configure logging
@@ -101,7 +108,7 @@ def downsample_pyramid_on_disk(
             "dimension_names": axes_out_names,
         }
         da.to_zarr(
-            arr=output,
+            arr=output.rechunk((1, 5, 64, 64, 3)),
             url=image_path,
             component=str(level),
             zarr_format=fmt.zarr_format,
@@ -121,10 +128,9 @@ def downsample_pyramid_on_disk(
 
 def create_transform(axes, factor, spatial_names=["x", "y"]):
     scale = [1.0] * len(axes)
-    for axis_name in ("x", "y"):
-        if axis_name in axes:
-            axis_idx = axes.index(axis_name)
-            scale[axis_idx] = float(factor)
+    for iax, ax in enumerate(axes):
+        if ax["name"] in spatial_names:
+            scale[iax] = float(factor)
     return [
         {
             "type": "scale",
@@ -158,22 +164,26 @@ if OUTPUT_PATH.exists():
 OUTPUT_PATH.mkdir(parents=True)
 fmt = CurrentFormat()
 axes_in = [
-    {"name": "x", "type": "space", "unit": "pixel"},
-    {"name": "y", "type": "space", "unit": "pixel"},
+    {"name": "x", "type": "space", "unit": "nanometer"},
+    {"name": "y", "type": "space", "unit": "nanometer"},
     {"name": "t", "type": "time"},
-    {"name": "z", "type": "space", "unit": "pixel"},
+    {"name": "z", "type": "space", "unit": "nanometer"},
     {"name": "c", "type": "channel"},
 ]
 axes_out = [
     {"name": "t", "type": "time"},
     {"name": "c", "type": "channel"},
-    {"name": "x", "type": "space", "unit": "pixel"},
-    {"name": "y", "type": "space", "unit": "pixel"},
-    {"name": "z", "type": "space", "unit": "pixel"},
+    {"name": "x", "type": "space", "unit": "nanometer"},
+    {"name": "y", "type": "space", "unit": "nanometer"},
+    {"name": "z", "type": "space", "unit": "nanometer"},
 ]
 n_rows, n_cols = validate_well(input_data.shape, WELL_SIZE)
 logger.info(f"Processing {n_rows} rows x {n_cols} cols = {n_rows * n_cols} wells")
 logger.info("Starting well-by-well processing using ome-zarr...")
+if SUBSET_ROW is not None:
+    n_rows = SUBSET_ROW
+if SUBSET_COL is not None:
+    n_cols = SUBSET_COL
 for row, col in itt.product(range(n_rows), range(n_cols)):
     well_id = f"well_r{row:02d}_c{col:02d}"
     logger.info(f"Processing {well_id} (row={row}, col={col})")
