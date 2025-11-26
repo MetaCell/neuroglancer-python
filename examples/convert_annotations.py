@@ -66,9 +66,19 @@ def main():
         # TODO - temp step as only have up to row 10, col 10 right now
         if well_row >= 10 or well_col >= 10:
             continue
+        # Create a name from the row + col + field
+        row = str(int(result["row"])).zfill(2)
+        col = str(int(result["col"])).zfill(2)
+        field = str(int(result["field_id"])).zfill(2)
+        id = f"{row}_{col}_{field}"
+        result["id"] = id
+        result["name"] = f"row {row} col {col} field {field}"
         results.append(result)
 
     df = pd.DataFrame(results)
+    # Sort the dataframe by well_row and well_col for easier viewing,
+    # so r00_c00 comes first, then r00_c01, etc.
+    df = df.sort_values(by=["s0_start_y", "s0_start_x"]).reset_index(drop=True)
     output_path = Path(PATH) / "metadata_filled.csv"
     df.to_csv(output_path, index=False)
     print(f"Wrote annotations to {output_path}")
